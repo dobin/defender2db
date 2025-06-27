@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    {% include 'header.html' %}
+  </head>
+  <body>
+    {% include 'navigation.html' %}
+
+    <div class="indent">
+
+    <h1> Defender Search </h1>
+
+    <p>Search for threats in the Defender DB, and show the signatures.</p>
+
+    Examples:
+    <ul>
+      <li>Frethog.AB</li>
+      <li>Win32/Bearfoos</li>
+    </ul>
+
+    <form action="/search" method="get">
+      <input type="text" name="threat_name" placeholder="metasploit" required>
+      <button type="submit">Search</button>
+    </form>
+
+  <br>
+  <h2>Source</h2>
+
+  Source at <a href="https://github.com/dobin/defender2yara">github.com/dobin/defender2yara</a>
+
+  </div>
+
+  </body>
+</html>
