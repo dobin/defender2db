@@ -4,6 +4,10 @@ import sys
 import io
 import subprocess
 
+import logging
+
+logger = logging.getLogger(__package__)
+
 
 def lua_disassemble(filepath) -> bytes:
     #filepath = "data/lua_1_fixed.bin"
@@ -12,10 +16,9 @@ def lua_disassemble(filepath) -> bytes:
     if result.returncode == 0:
         return result.stdout
     else:
-        print("Decompilation failed with error code:", result.returncode)
-        print("Error message:", result.stderr)
+        logger.error("Decompilation failed with error code:", result.returncode)
+        logger.error("Error message:", result.stderr)
         return None
-    
 
 
 # copy of https://raw.githubusercontent.com/commial/experiments/refs/heads/master/windows-defender/lua/parse.py

@@ -94,7 +94,7 @@ poetry run python -m defender2yara --asr
 ```
 
 
-## Pickle Cache
+## Pickle Cache (only for testing)
 
 Convert VDM to a mega pickle `cache/mpas.vdm.pickle` and `cache/mpav.vdm.pickle`: 
 
