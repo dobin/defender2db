@@ -339,7 +339,7 @@ def convert_threats(vdm:Vdm):
         leave=False)
 
     # Batch processing for faster inserts
-    batch_size = 2048
+    batch_size = 1000
     batch = []
     
     with db.atomic():  # Single transaction for all inserts
