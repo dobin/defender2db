@@ -112,6 +112,9 @@ def parse_asr(vdm: Vdm):
     progress = False
     progress_bar: tqdm
 
+    # make dir rules/asr_lua if not exists
+    os.makedirs("rules/asr_lua", exist_ok=True)
+
     if progress:
         progress_bar = tqdm(
                 total=len(threats),
@@ -325,31 +328,41 @@ def convert_threats(vdm:Vdm):
         desc="Converting signatures",
         leave=False)
 
-    n = 0
-    for threat in threats:
-        name = threat.threat_name
+    # Batch processing for faster inserts
+    batch_size = 2048
+    batch = []
+    
+    with db.atomic():  # Single transaction for all inserts
+        for threat in threats:
+            name = threat.threat_name
 
-        sig_unique = set()
-        for sig in threat.signatures:
-            if sig.sig_type not in sig_unique:
+            sig_unique = set()
+            for sig in threat.signatures:
                 sig_unique.add(sig.sig_type)
-            else:
-                continue
-        sigs = " ".join(sig_unique)
+            sigs = " ".join(sig_unique)
 
-        niceThreat = NiceThreat(threat)
-        niceThreat.lua_scripts = get_lua_from_threat(threat)
-        niceThreat.yara_rules = get_yara_from_threat(threat)
+            niceThreat = NiceThreat(threat)
+            niceThreat.lua_scripts = get_lua_from_threat(threat)
+            niceThreat.yara_rules = get_yara_from_threat(threat)
 
-        threatObj = pickle.dumps(niceThreat)
-        DbThreat.create(
-            name=name,
-            sigs=sigs,
-            sigcount=len(threat.signatures),
-            threatObject=threatObj
-        )
+            threatObj = pickle.dumps(niceThreat)
+            
+            batch.append({
+                'name': name,
+                'sigs': sigs,
+                'sigcount': len(threat.signatures),
+                'threatObject': threatObj
+            })
 
-        progress_bar.update(1)
+            if len(batch) >= batch_size:
+                DbThreat.insert_many(batch).execute()
+                batch = []
+
+            progress_bar.update(1)
+
+        # Insert remaining items
+        if batch:
+            DbThreat.insert_many(batch).execute()
 
     progress_bar.close()
     db.close()
@@ -386,7 +399,7 @@ def get_yara_from_threat(threat:Threat) -> List[str]:
         try:
             yara.compile(source=yara_rule)
         except yara.SyntaxError as e:
-            logger.warn(f"Failed to convert {threat.threat_name}: {str(e)}")
+            logger.warn(f"Failed to convert {threat.threat_name} to yara: {str(e)}")
             logger.debug("\n"+yara_rule)
             continue
         result.append(yara_rule)

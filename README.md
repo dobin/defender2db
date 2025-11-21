@@ -13,6 +13,8 @@ Its work in progress.
 Microsoft ASR rules are in [result/asr_rules](https://github.com/dobin/defender2yara/tree/main/result/asr_rules).
 All 50'000 LUA scripts are in [result/lua](https://github.com/dobin/defender2yara/tree/main/result/lua).
 
+Data available at [defender2db_data](https://github.com/dobin/defender2db_data)
+
 
 ## Installation using `Poetry`
 
@@ -37,11 +39,26 @@ poetry install
 
 ## Usage
 
-Download current VDM into `cache/engine` and `cache/vdm`:
+### Download / Update virus definition
+
+Download current Defender Signatures (VDM) into `cache/engine` and `cache/vdm`:
 
 ```sh
 poetry run python -m defender2yara --download
 ```
+
+Result:
+```
+$ ls -l cache/engine/ cache/vdm/
+cache/engine/:
+drwxr-xr-x 2 dobin dobin 4096 Nov 21 09:05 1.1.25100.9002
+
+cache/vdm/:
+drwxr-xr-x 4 dobin dobin 4096 Nov 21 09:05 1.441
+```
+
+
+### Virus definitions to SQL DB
 
 Convert to `./cache/threats.db` SQLite DB. File will be overwritten!
 ```sh
@@ -53,6 +70,22 @@ Display first few entries of the sqlite db:
 ```sh
 poetry run python tools/dbtest.py
 ```
+
+
+### Web Application
+
+Start web server to search and browse the definitions: 
+
+```sh
+$ poetry run python3 web.py
+defender2db web interface
+Listen on: 0.0.0.0 5002
+ * Serving Flask app 'web'
+ * Debug mode: off
+```
+
+
+### ASR rules
 
 Get the ASR rules into `rules/`:
 
