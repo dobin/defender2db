@@ -36,6 +36,11 @@ cd defender2yara
 poetry install
 ```
 
+Maybe have to install `libarchive-dev`:
+```
+# apt install libarchive-dev
+```
+
 
 ## Usage
 
