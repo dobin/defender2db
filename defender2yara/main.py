@@ -323,13 +323,6 @@ def convert_threats(vdm:Vdm):
     logger.info("Sit back and relax")
     threats = vdm.get_threats()
 
-    if os.path.exists(db.database):
-        logger.info("Database already exists, removing it.")
-        os.remove(db.database)
-
-    db.connect()
-    db.create_tables([DbThreat])
-
     progress_bar = tqdm(
         total=len(threats),
         unit='threat',
@@ -363,6 +356,7 @@ def convert_threats(vdm:Vdm):
                 'sigcount': len(threat.signatures),
                 'threatObject': threatObj
             })
+            #logger.info(f"Converted threat: {name} with {len(threat.signatures)} signatures.")
 
             if len(batch) >= batch_size:
                 DbThreat.insert_many(batch).execute()
@@ -516,6 +510,13 @@ def main(args):
         if not signature_version:
             logger.error("No signature version found. Please download the latest signature database with --download option.")
             sys.exit(1)
+
+    # TODO
+    if os.path.exists(db.database):
+        logger.info("Database already exists, removing it.")
+        os.remove(db.database)
+        db.connect()
+        db.create_tables([DbThreat])
 
     # iterate through mpav and mpas - each can take a lot of memory
     for name in ["mpav","mpas"]:
