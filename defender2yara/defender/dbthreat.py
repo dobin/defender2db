@@ -1,4 +1,4 @@
-from peewee import Model, CharField, SqliteDatabase, BlobField, IntegerField
+from peewee import Model, CharField, SqliteDatabase, BlobField, IntegerField, DateTimeField
 from defender2yara.defender.threat import Threat
 
 
@@ -13,6 +13,11 @@ class DbThreat(BaseModel):
     sigs = CharField()
     sigcount = IntegerField()
     threatObject = BlobField()
+
+class DbMetadata(BaseModel):
+    signature_version = CharField()
+    engine_version = CharField()
+    conversion_datetime = DateTimeField()
 
 
 class NiceThreat():

@@ -3,7 +3,7 @@ from werkzeug.utils import secure_filename
 import os
 import logging
 from typing import List, Tuple
-from defender2yara.defender.dbthreat import db, DbThreat
+from defender2yara.defender.dbthreat import db, DbThreat, DbMetadata
 import urllib.parse
 import pickle
 from defender2yara.util.utils import hexdump_s
@@ -14,7 +14,13 @@ logger = logging.getLogger("Views")
 
 @views.route("/")
 def index():
-    return render_template('index.html')
+    metadata = None
+    try:
+        metadata = DbMetadata.get()
+    except Exception as e:
+        logger.warning(f"Could not retrieve metadata: {e}")
+    
+    return render_template('index.html', metadata=metadata)
     
 
 @views.route("/threat")

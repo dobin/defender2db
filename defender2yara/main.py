@@ -5,7 +5,7 @@ import shutil
 import yara
 from collections import defaultdict
 from peewee import Model, CharField, SqliteDatabase, BlobField, IntegerField
-from defender2yara.defender.dbthreat import NiceThreat, DbThreat, db
+from defender2yara.defender.dbthreat import NiceThreat, DbThreat, DbMetadata, db
 from packaging.version import Version
 
 from defender2yara.defender.threat import Threat
@@ -18,6 +18,7 @@ from defender2yara.util.utils import hexdump
 import pickle
 from tqdm import tqdm
 import logging
+from datetime import datetime
 
 logger = logging.getLogger(__package__)
 
@@ -520,7 +521,15 @@ def main(args):
         logger.info("Database already exists, removing it.")
         os.remove(db.database)
         db.connect()
-        db.create_tables([DbThreat])
+        db.create_tables([DbThreat, DbMetadata])
+
+    # Update or create metadata entry
+    metadata = DbMetadata.create(
+        signature_version=signature_version,
+        engine_version=engine_version,
+        conversion_datetime=datetime.now()
+    )
+    metadata.save()
 
     # iterate through mpav and mpas - each can take a lot of memory
     for name in ["mpav","mpas"]:

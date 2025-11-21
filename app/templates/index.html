@@ -22,10 +22,29 @@
       <input type="text" name="threat_name" placeholder="metasploit" required>
       <button type="submit">Search</button>
     </form>
-
   <br>
-  <h2>Source</h2>
+  <br>
+  {% if metadata %}
+  <h2>Database Information</h2>
+  <table class="table table-sm table-bordered" style="width: auto;">
+    <tbody>
+      <tr>
+        <th>Signature Version</th>
+        <td>{{ metadata.signature_version }}</td>
+      </tr>
+      <tr>
+        <th>Engine Version</th>
+        <td>{{ metadata.engine_version }}</td>
+      </tr>
+      <tr>
+        <th>Conversion Date</th>
+        <td>{{ metadata.conversion_datetime.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+      </tr>
+    </tbody>
+  </table>
+  {% endif %}
 
+  <h2>Source</h2>
   Source at <a href="https://github.com/dobin/defender2db">github.com/dobin/defender2db</a>
 
   </div>
