@@ -10,8 +10,8 @@ Live at [defendersearch.r00ted.ch](https://defendersearch.r00ted.ch)
 
 Its work in progress.
 
-Microsoft ASR rules are in [result/asr_rules](https://github.com/dobin/defender2yara/tree/main/result/asr_rules).
-All 50'000 LUA scripts are in [result/lua](https://github.com/dobin/defender2yara/tree/main/result/lua).
+Microsoft ASR rules are in [result/asr_rules](https://github.com/dobin/defender2db/tree/main/result/asr_rules).
+All 50'000 LUA scripts are in [result/lua](https://github.com/dobin/defender2db/tree/main/result/lua).
 
 Data available at [defender2db_data](https://github.com/dobin/defender2db_data)
 
