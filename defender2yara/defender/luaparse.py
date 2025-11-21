@@ -20,7 +20,10 @@ def lua_disassemble(filepath) -> bytes:
 
 # copy of https://raw.githubusercontent.com/commial/experiments/refs/heads/master/windows-defender/lua/parse.py
 
-def fixup_lua_data(data: bytes) -> bytes:
+def fixup_lua_data(data: bytes) -> tuple[bytes | None, str | None]:
+    """Fix up Lua data and return (fixed_data, error_message).
+    Returns (bytes, None) on success, (None, error_str) on failure.
+    """
     #fdesc = open(options.target, "rb")
     fdesc = io.BytesIO(data)
 
@@ -28,23 +31,21 @@ def fixup_lua_data(data: bytes) -> bytes:
     # MpEngine actually checks that these values are always the same
     header = fdesc.read(12)
     if header != b'\x1bLuaQ\x00\x01\x04\x08\x04\x08\x01':
-        print("  Invalid Lua header: {}".format(header.hex()))
-        return None
+        return None, f"Invalid Lua header: {header.hex()}"
     #assert header == b'\x1bLuaQ\x00\x01\x04\x08\x04\x08\x01'
 
     func = LuaFunc(fdesc)
-    if not func.init():
-        print("  Failed to initialize Lua function")
-        return None
+    success, error = func.init()
+    if not success:
+        return None, error if error else "Failed to initialize Lua function"
     
     export = None
     try:
         export = func.export(root=True)
     except Exception as e:
-        print("  Exception when converting lua: {}".format(e))
-        return None
+        return None, f"Exception when converting lua: {e}"
     
-    return export
+    return export, None
 
 
 class LuaConst(object):
@@ -84,20 +85,18 @@ class LuaFunc(object):
         self.stream = stream
 
     def init(self):
+        """Initialize Lua function. Returns (success, error_message)."""
         src_name = self.stream.read(4)
         if src_name != b"\x00" * 4:
-            print("  Invalid Lua source name")
-            return False
+            return False, "Invalid Lua source name"
         #assert src_name == b"\x00" * 4
         line_def = self.stream.read(4)
         if line_def != b"\x00" * 4:
-            print("  Invalid Lua line definition")
-            return False
+            return False, "Invalid Lua line definition"
         #assert line_def == b"\x00" * 4
         lastline_def = self.stream.read(4)
         if lastline_def != b"\x00" * 4:
-            print("  Invalid Lua last line definition")
-            return False
+            return False, "Invalid Lua last line definition"
         #assert lastline_def == b"\x00" * 4
 
         self.nb_upvalues = self.read_byte()
@@ -136,26 +135,25 @@ class LuaFunc(object):
         self.funcs = []
         for i in range(nb_func):
             f = LuaFunc(self.stream)
-            f.init()
+            success, error = f.init()
+            if not success:
+                return False, error if error else f"Failed to init nested function {i}"
             self.funcs.append(f)
 
         src_line_positions = self.read_int()
         if src_line_positions != 0:
-            print("  Invalid Lua source line positions")
-            return False
+            return False, "Invalid Lua source line positions"
         #assert src_line_positions == 0
         nb_locals = self.read_int()
         if nb_locals != 0:
-            print("  Invalid Lua locals")
-            return False
+            return False, "Invalid Lua locals"
         #assert nb_locals == 0
         nb_upvalues = self.read_int()
         if nb_upvalues != 0:
-            print("  Invalid Lua upvalues")
-            return False
+            return False, "Invalid Lua upvalues"
         #assert nb_upvalues == 0
 
-        return True
+        return True, None
 
     def export(self, root=False):
         """
@@ -205,8 +203,9 @@ def main():
     with open(args.target, "rb") as fdesc:
         data = fdesc.read()
 
-    fixed_data = fixup_lua_data(data)
+    fixed_data, error = fixup_lua_data(data)
     if fixed_data is None:
+        print(f"Error: {error}")
         sys.exit(1)
 
     print(f"Resulting fixed Lua precompiled script: {args.target}.fixed")

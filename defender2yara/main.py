@@ -100,7 +100,10 @@ def parse_asr_entry(threat: Threat, n: int) -> int:
             #print("Lua header offset: {}".format(lua_header_offset))
 
             # fixup lua data
-            lua_fixed = fixup_lua_data(sig.sig_data[lua_header_offset:])
+            lua_fixed, error = fixup_lua_data(sig.sig_data[lua_header_offset:])
+            if lua_fixed is None:
+                logger.error(f"Failed to fixup Lua data for threat {threat.threat_name}: {error}")
+                continue
             
             filename_out = os.path.join("rules", "asr_lua_{}.bin".format(n))
             open(filename_out, "wb").write(lua_fixed)
@@ -145,8 +148,12 @@ def parse_sig_lua(vdm:Vdm, name: str):
     for sig in signatures:
         if sig.sig_type == "SIGNATURE_TYPE_LUASTANDALONE":
             lua_header_offset = sig.sig_data.find(b'\x1bLuaQ')
-            lua_data = fixup_lua_data(sig.sig_data[lua_header_offset:])
-            if lua_data != None:
+            lua_data, error = fixup_lua_data(sig.sig_data[lua_header_offset:])
+            if lua_data is None:
+                logger.error(f"Failed to fixup Lua data for signature {n}: {error}")
+                n += 1
+                continue
+            if lua_data is not None:
                 # write file
                 filepath = os.path.join("rules", "lua", name, "{}.bin".format(n))
                 os.makedirs(os.path.dirname(filepath), exist_ok=True)
@@ -212,7 +219,10 @@ def parse_threat_lua(vdm:Vdm):
                     print("  Lua signature found: {}".format(sig.sig_name))
 
                     lua_header_offset = sig.sig_data.find(b'\x1bLuaQ')
-                    lua_data = fixup_lua_data(sig.sig_data[lua_header_offset:])
+                    lua_data, error = fixup_lua_data(sig.sig_data[lua_header_offset:])
+                    if lua_data is None:
+                        logger.error(f"Failed to fixup Lua data for threat {threat.threat_name}: {error}")
+                        continue
                     if lua_data:
                         luas.append(lua_data)
                     else:
@@ -373,8 +383,11 @@ def get_lua_from_threat(threat:Threat) -> List[bytes]:
     for sig in threat.signatures:
         if sig.sig_type == "SIGNATURE_TYPE_LUASTANDALONE":
             lua_header_offset = sig.sig_data.find(b'\x1bLuaQ')
-            lua_data = fixup_lua_data(sig.sig_data[lua_header_offset:])
-            if lua_data != None:
+            lua_data, error = fixup_lua_data(sig.sig_data[lua_header_offset:])
+            if lua_data is None:
+                logger.error(f"Failed to fixup Lua data for threat {threat.threat_name}: {error}")
+                continue
+            if lua_data is not None:
                 # write file
                 filepath = os.path.join("cache", "lua.tmp")
                 os.makedirs(os.path.dirname(filepath), exist_ok=True)
