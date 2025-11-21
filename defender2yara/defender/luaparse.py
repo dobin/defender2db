@@ -9,14 +9,24 @@ import logging
 logger = logging.getLogger(__package__)
 
 
-def lua_disassemble(filepath) -> bytes:
-    #filepath = "data/lua_1_fixed.bin"
+def lua_decompile(filepath) -> bytes:
     result = subprocess.run(["./luadec", filepath], capture_output=True)
 
     if result.returncode == 0:
         return result.stdout
     else:
         logger.error("Decompilation failed with error code:", result.returncode)
+        logger.error("Error message:", result.stderr)
+        return None
+    
+
+def lua_disassemble(filepath) -> bytes:
+    result = subprocess.run(["./luadec", "-dis", filepath], capture_output=True)
+
+    if result.returncode == 0:
+        return result.stdout
+    else:
+        logger.error("Disassembly failed with error code:", result.returncode)
         logger.error("Error message:", result.stderr)
         return None
 

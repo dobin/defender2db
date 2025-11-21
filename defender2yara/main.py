@@ -12,7 +12,7 @@ from defender2yara.defender.threat import Threat
 from defender2yara.yara.rule import YaraRule
 from defender2yara.defender.vdm import Vdm
 from defender2yara.defender.download import get_latest_signature_vdm, download_latest_signature, parse_mpam_exe
-from defender2yara.defender.luaparse import fixup_lua_data, lua_disassemble
+from defender2yara.defender.luaparse import fixup_lua_data, lua_decompile, lua_disassemble
 from defender2yara.defender.signature import *
 from defender2yara.util.utils import hexdump
 import pickle
@@ -162,7 +162,7 @@ def parse_sig_lua(vdm:Vdm, name: str):
                     f.write(lua_data)
 
                 # convert
-                lua_disassembled = lua_disassemble(filepath)
+                lua_disassembled = lua_decompile(filepath)
 
                 # write disassembled lua to file
                 filepath2 = filepath + ".txt"
@@ -264,7 +264,7 @@ def parse_threat_lua(vdm:Vdm):
                         f.write(lua)
 
                     # convert
-                    lua_disassembled = lua_disassemble(filepath)
+                    lua_disassembled = lua_decompile(filepath)
                     if lua_disassembled is not None:
                         with open(filepath + ".txt", "wb") as f:
                             f.write(lua)
@@ -389,8 +389,12 @@ def get_lua_from_threat(threat:Threat) -> List[bytes]:
                     f.write(lua_data)
 
                 # convert
-                lua_disassembled = lua_disassemble(filepath)
-                lua_scripts.append(lua_disassembled)
+                lua_decompiled = lua_decompile(filepath)
+                if b'DECOMPILER ERROR' in lua_decompiled:
+                    lua_disassembled = lua_disassemble(filepath)
+                    lua_decompiled += b'\r\nDisassembly errors, printing opcodes. Use a LLM to interpret it.\r\n' + lua_disassembled
+
+                lua_scripts.append(lua_decompiled)
 
     return lua_scripts
 
