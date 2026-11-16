@@ -331,7 +331,8 @@ def convert_threats(vdm:Vdm):
         bar_format='{l_bar}{bar:20}{r_bar}',
         colour='green',
         desc="Converting signatures",
-        leave=False)
+        leave=True)
+    progress_bar.refresh()
 
     # Fail once with setup instructions instead of silently omitting all Lua.
     load_lua_backend()
