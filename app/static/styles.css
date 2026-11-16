@@ -77,6 +77,134 @@
   }
   
 
+  .severity-badge {
+    color: #212529 !important;
+  }
+
+  .severity-critical {
+    background-color: #f5b7bd !important;
+  }
+
+  .severity-high {
+    background-color: #ffe69c !important;
+  }
+
+  .severity-default {
+    background-color: #e2e3e5 !important;
+  }
+
+  .threat-overview {
+    margin: 0.5em 1em 1.25em 0;
+    padding-bottom: 0.75em;
+    border-bottom: 1px solid var(--bs-border-color, #ccc);
+  }
+
+  .threat-title {
+    font-size: 1.5rem;
+    margin-bottom: 0.4em;
+  }
+
+  .threat-overview-grid {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.35em 1.25em;
+    font-size: 0.92rem;
+  }
+
+  .threat-facts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25em 1em;
+    flex: 1 1 34rem;
+  }
+
+  .threat-facts > span {
+    white-space: nowrap;
+  }
+
+  .threat-signature-summary {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 0.25em 0.8em;
+  }
+
+  .threat-signature-summary details {
+    position: relative;
+  }
+
+  .threat-signature-summary summary {
+    cursor: pointer;
+    color: var(--bs-link-color, #0d6efd);
+    white-space: nowrap;
+  }
+
+  .signature-counts {
+    position: absolute;
+    z-index: 10;
+    top: 100%;
+    right: 0;
+    min-width: 16rem;
+    max-height: 24rem;
+    overflow-y: auto;
+    list-style: none;
+    margin: 0.35em 0 0;
+    padding: 0.45em 0.7em;
+    border: 1px solid var(--bs-border-color, #ccc);
+    border-radius: 0.35em;
+    background: var(--bs-body-bg, #fff);
+    box-shadow: 0 0.25em 0.75em rgba(0, 0, 0, 0.15);
+  }
+
+  .signature-counts li {
+    display: flex;
+    justify-content: space-between;
+    gap: 1em;
+    padding: 0.15em 0;
+  }
+
+  .signature-counts code {
+    color: var(--bs-body-color, #212529);
+    background: transparent;
+  }
+
+  .threat-generated-counts {
+    color: var(--bs-secondary-color, #6c757d);
+    font-size: 0.82rem;
+  }
+
+  .threat-section {
+    margin: 2em 1em 2em 0;
+  }
+
+  .signature-card {
+    border: 1px solid var(--bs-border-color, #ccc);
+    border-radius: 0.4em;
+    padding: 1em;
+    margin-bottom: 1em;
+  }
+
+  .signature-card summary {
+    cursor: pointer;
+    font-weight: 600;
+    margin-bottom: 0.5em;
+  }
+
+  .signature-card h3 {
+    font-size: 1rem;
+  }
+
+  .signature-card pre,
+  .signature-table code {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  .signature-table td {
+    vertical-align: top;
+  }
+
   .opsec_good { color: green; }
   .opsec_bad { color: red; }
   .opsec_neutral { color: orange; }

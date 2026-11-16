@@ -2,6 +2,7 @@ from flask import Flask, Blueprint, current_app, request, redirect, url_for, ren
 from werkzeug.utils import secure_filename
 import os
 import logging
+from collections import Counter
 from typing import List, Tuple
 from defender2yara.defender.dbthreat import db, DbThreat, DbMetadata
 from peewee import DoesNotExist
@@ -34,24 +35,23 @@ def get_threat():
     dbThreat = DbThreat.get(DbThreat.name == threat_name)
     threat = pickle.loads(dbThreat.threatObject)
 
-    skip_signatures = [
-        "HSTR_EXT_SIGS",
+    decoded_signatures = (
+        threat.dexhstr_signatures + threat.aggregator_signatures
+        + threat.version_checks + threat.behavior_signatures
+        + threat.nid_signatures + threat.pehstr_signatures
+    )
+    decoded_records = {(sig.sig_type, sig.sig_data) for sig in decoded_signatures}
+    skip_signatures = {
         "SIGNATURE_TYPE_PEHSTR",
         "SIGNATURE_TYPE_THREAT_BEGIN",
         "SIGNATURE_TYPE_THREAT_END",
         "SIGNATURE_TYPE_LUASTANDALONE",
-        "SIGNATURE_TYPE_REVOKED_CERTIFICATE"
-    ]
+        "SIGNATURE_TYPE_REVOKED_CERTIFICATE",
+    }
 
     sigs = []
-    threat.revoked_certs = []
     for sig in threat.signatures:
-        # more parsing
-        if sig.sig_type == "SIGNATURE_TYPE_REVOKED_CERTIFICATE":
-            threat.revoked_certs.append(sig.sig_data[3:23].hex())
-            continue
-
-        if sig.sig_type in skip_signatures or "HSTR_EXT" in sig.sig_type:
+        if sig.sig_type in skip_signatures or (sig.sig_type, sig.sig_data) in decoded_records:
             continue
 
         s = ""
@@ -59,7 +59,13 @@ def get_threat():
         s += hexdump_s(sig.sig_data)
         sigs.append(s)
 
-    return render_template('threat.html', threat=threat, signatures=sigs)
+    signature_counts = Counter(sig.sig_type for sig in threat.signatures)
+    return render_template(
+        'threat.html',
+        threat=threat,
+        signatures=sigs,
+        signature_counts=sorted(signature_counts.items()),
+    )
 
 
 @views.route("/search")

@@ -8,18 +8,35 @@
 
     <div class="indent">
 
-    <h1>Threat</h1>
+    <header class="threat-overview">
+      <h1 class="threat-title">{{ threat.name }}</h1>
+      <div class="threat-overview-grid">
+        <div class="threat-facts">
+          <span><strong>ID</strong> {{ threat.id }}</span>
+          <span><strong>Category</strong> {{ threat.category }}</span>
+          <span><strong>Severity</strong> <span class="badge severity-badge {% if threat.severity == 'Critical' %}severity-critical{% elif threat.severity == 'High' %}severity-high{% else %}severity-default{% endif %}">{{ threat.severity }}</span></span>
+          {% if threat.type %}<span><strong>Type</strong> {{ threat.type }}</span>{% endif %}
+          {% if threat.platform %}<span><strong>Platform</strong> {{ threat.platform }}</span>{% endif %}
+          {% if threat.family %}<span><strong>Family</strong> {{ threat.family }}</span>{% endif %}
+          {% if threat.variant %}<span><strong>Variant</strong> {{ threat.variant }}</span>{% endif %}
+          {% if threat.suffixes %}<span><strong>Suffixes</strong> {{ threat.suffixes|join(', ') }}</span>{% endif %}
+        </div>
+        <div class="threat-signature-summary">
+          <details>
+            <summary>Signature counts <span class="badge text-bg-secondary">{{ threat.signatures|length }}</span></summary>
+            {% if signature_counts %}
+            <ul class="signature-counts">{% for sig_type, count in signature_counts %}
+              <li><code>{{ sig_type|replace('SIGNATURE_TYPE_', '') }}</code><span class="badge text-bg-light">{{ count }}</span></li>
+            {% endfor %}</ul>
+            {% else %}<p class="text-muted mb-0">No signatures.</p>{% endif %}
+          </details>
+          <span class="threat-generated-counts">YARA {{ threat.yara_rules|length }} · Lua {{ threat.lua_scripts|length }} · Revoked certs {{ threat.revoked_certs|length }}</span>
+        </div>
+      </div>
+    </header>
 
-    <p>
-    {{ threat.name }} ID: {{ threat.id }} Category:{{ threat.category}} Severity: {{ threat.severity}} 
-    ({{ threat.type }} {{ threat.platform }}  {{ threat.family }}  {{ threat.variant }}  {{ threat.suffixes }})
-    </p>
-
+    {% if threat.yara_rules %}
     <h2> Yara Signatures</h2>
-
-    {% if threat.yara_rules|length == 0 %}
-        <p>No Yara rules found for this threat.</p>
-    {% endif %}
 
     {% for sig in threat.yara_rules %}
         <div class="sig">
@@ -28,11 +45,10 @@
         </div>
     {% endfor %}
 
-    <h2> Lua Scripts</h2>
-
-    {% if threat.lua_scripts|length == 0 %}
-        <p>No Lua scripts found for this threat.</p>
     {% endif %}
+
+    {% if threat.lua_scripts %}
+    <h2> Lua Scripts</h2>
 
     {% for script in threat.lua_scripts %}
         <div class="script">
@@ -42,11 +58,10 @@
     {% endfor %}
 
 
-    <h2> Revoked Certificates </h2>
-
-    {% if threat.revoked_certs|length == 0 %}
-        <p>No revoked certificates found for this threat.</p>
     {% endif %}
+
+    {% if threat.revoked_certs %}
+    <h2> Revoked Certificates </h2>
 
     {% for cert in threat.revoked_certs %}
         <div class="cert">
@@ -54,14 +69,105 @@
         </div>
     {% endfor %}
     <br>
-
-
-    <h2> Other Signatures </h2>
-    {% if signatures|length == 0 %}
-        <p>No further sigs found for this threat.</p>
-    {% else %}
-        Purpose of these signatures are mostly unknown. <br><br>
     {% endif %}
+
+
+    {% macro string_signatures(title, records) %}
+    {% if records %}
+    <section class="threat-section">
+      <h2>{{ title }} <span class="badge text-bg-secondary">{{ records|length }}</span></h2>
+      {% for sig in records %}
+      <details class="signature-card" {% if loop.first %}open{% endif %}>
+        <summary>{{ sig.sig_type }} · Threshold {{ sig.threshold }} · {{ sig.subrules|length }} patterns</summary>
+        {% if sig.name %}<p><strong>Name / reference:</strong> {{ sig.name }}</p>{% endif %}
+        <p>Flags: {{ '0x%04x'|format(sig.flags) }} · End marker: {{ sig.end_marker }}</p>
+        {% if sig.subrules %}
+        <div class="table-responsive">
+          <table class="table table-sm table-bordered signature-table">
+            <thead><tr><th>Weight</th><th>Flags</th><th>Pattern (hex)</th><th>Text (best effort)</th></tr></thead>
+            <tbody>{% for rule in sig.subrules %}
+              <tr><td>{{ rule.rule_weight }}</td><td>{{ '0x%02x'|format(rule.unknown_u8_1) }}</td>
+              <td><code>{{ rule.rule_bytes.hex(' ') }}</code></td><td><code>{{ rule.rule_bytes|bytes_to_str }}</code></td></tr>
+            {% endfor %}</tbody>
+          </table>
+        </div>
+        {% endif %}
+      </details>
+      {% endfor %}
+    </section>
+    {% endif %}
+    {% endmacro %}
+
+    {{ string_signatures('DEX string signatures', threat.dexhstr_signatures) }}
+    {{ string_signatures('PE extended string signatures', threat.pehstr_signatures) }}
+
+    {% if threat.aggregator_signatures %}
+    <section class="threat-section">
+      <h2>Aggregator expressions <span class="badge text-bg-secondary">{{ threat.aggregator_signatures|length }}</span></h2>
+      {% for sig in threat.aggregator_signatures %}
+      <article class="signature-card">
+        <h3>{{ sig.sig_type }}</h3>
+        {% if sig.name %}<p><strong>Name:</strong> {{ sig.name }}</p>{% endif %}
+        <p>Flags: {{ '0x%02x'|format(sig.flags) }}</p>
+        <pre>{{ sig.expression }}</pre>
+        <details><summary>References ({{ sig.references|length }})</summary>
+          <ul>{% for reference in sig.references %}<li><code>{{ reference }}</code></li>{% endfor %}</ul>
+        </details>
+      </article>
+      {% endfor %}
+    </section>
+    {% endif %}
+
+    {% if threat.version_checks %}
+    <section class="threat-section">
+      <h2>Version checks <span class="badge text-bg-secondary">{{ threat.version_checks|length }}</span></h2>
+      <p>Environment gates apply to subsequent records in signature order; these are not file detections.</p>
+      {% for sig in threat.version_checks %}
+      <article class="signature-card">
+        <strong>{{ sig.sig_type }}</strong>
+        <p><code>{{ sig.describe() }}</code></p>
+        <p>Check ID: {{ '0x%02x'|format(sig.check_id) }} · Value: {{ '0x%x'|format(sig.value) }}
+          {% if sig.is_unconditional %} · Always passes{% endif %}</p>
+      </article>
+      {% endfor %}
+    </section>
+    {% endif %}
+
+    {% if threat.behavior_signatures %}
+    <section class="threat-section">
+      <h2>Behavior signature trees <span class="badge text-bg-secondary">{{ threat.behavior_signatures|length }}</span></h2>
+      {% for sig in threat.behavior_signatures %}
+      <details class="signature-card" {% if loop.first %}open{% endif %}>
+        <summary>{{ sig.describe() }}</summary>
+        <div class="table-responsive">
+          <table class="table table-sm table-bordered signature-table">
+            <thead><tr><th>Edge</th><th>Node / action words (hex)</th><th>Conditions</th></tr></thead>
+            <tbody>{% for edge in sig.edges %}
+              <tr><td>{{ loop.index }}</td><td><code>{{ '%08x %08x %08x %08x %08x %08x'|format(edge.x, edge.y, edge.z, edge.w, edge.extra, edge.extra2) }}</code></td>
+              <td>{% for condition in edge.conditions %}
+                <p>{{ condition.side }} · {{ condition.kind }} · Flags {{ '0x%02x'|format(condition.flags) }}<br>
+                <code>{{ condition.text }}</code></p>
+              {% else %}No inline conditions{% endfor %}</td></tr>
+            {% endfor %}</tbody>
+          </table>
+        </div>
+      </details>
+      {% endfor %}
+    </section>
+    {% endif %}
+
+    {% if threat.nid_signatures %}
+    <section class="threat-section">
+      <h2>NID records <span class="badge text-bg-secondary">{{ threat.nid_signatures|length }}</span></h2>
+      {% for sig in threat.nid_signatures %}
+      <article class="signature-card"><strong>{{ sig.sig_type }}</strong><pre>{{ sig.describe() }}</pre></article>
+      {% endfor %}
+    </section>
+    {% endif %}
+
+    {% if signatures %}
+    <h2> Other Signatures </h2>
+    Purpose of these signatures are mostly unknown. <br><br>
 
     {% for sig in signatures %}
         <div class="tag">
@@ -69,6 +175,7 @@
             </pre>
         </div>
     {% endfor %}
+    {% endif %}
 
     </div>
   </body>
