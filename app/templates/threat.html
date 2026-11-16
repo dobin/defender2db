@@ -35,6 +35,30 @@
       </div>
     </header>
 
+    {% if threat.static_signatures %}
+    <section class="threat-section">
+      <h2>Static file signatures <span class="badge text-bg-secondary">{{ threat.static_signatures|length }}</span></h2>
+      <p>File signatures match size and partial CRCs, plus the selected full-file hash.</p>
+      {% for sig in threat.static_signatures %}
+      <article class="signature-card static-signature-card">
+        <div class="static-signature-heading">
+          <strong>{{ sig.record_name or 'Unnamed static signature' }}</strong>
+          <span class="badge text-bg-light">{{ sig.hash_type|upper }}</span>
+        </div>
+        <dl class="static-signature-details">
+          <div><dt>File size</dt><dd>{{ sig.file_size }}</dd></div>
+          <div><dt>Match mode</dt><dd>{{ 'Prefix match' if sig.prefix_match else 'Exact size' }}</dd></div>
+          <div><dt>Strong hash</dt><dd><code>{{ sig.file_hash.hex() or 'Unavailable' }}</code></dd></div>
+          <div><dt>Partial CRC 1</dt><dd><code>{{ '%08x'|format(sig.partial_crc1) }}</code></dd></div>
+          <div><dt>Partial CRC 2</dt><dd><code>{{ '%08x'|format(sig.partial_crc2) }}</code></dd></div>
+          <div><dt>Partial CRC 3</dt><dd><code>{{ '%08x'|format(sig.partial_crc3) }}</code></dd></div>
+          <div><dt>Flags</dt><dd><code>0x{{ '%04x'|format(sig.flags) }}</code></dd></div>
+        </dl>
+      </article>
+      {% endfor %}
+    </section>
+    {% endif %}
+
     {% if threat.yara_rules %}
     <h2> Yara Signatures</h2>
 

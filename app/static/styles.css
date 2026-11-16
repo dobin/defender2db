@@ -205,6 +205,36 @@
     vertical-align: top;
   }
 
+  .static-signature-heading {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.5em;
+    margin-bottom: 0.75em;
+  }
+
+  .static-signature-details {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+    gap: 0.65em 1em;
+    margin: 0;
+  }
+
+  .static-signature-details > div {
+    min-width: 0;
+  }
+
+  .static-signature-details dt {
+    color: var(--bs-secondary-color, #6c757d);
+    font-size: 0.8rem;
+    font-weight: 600;
+  }
+
+  .static-signature-details dd {
+    margin: 0;
+    overflow-wrap: anywhere;
+  }
+
   .opsec_good { color: green; }
   .opsec_bad { color: red; }
   .opsec_neutral { color: orange; }

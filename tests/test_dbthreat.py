@@ -12,6 +12,7 @@ from defender2yara.defender.dbthreat import DbThreat, NiceThreat
 from defender2yara.defender.signature.aggregator import encode_aggregator
 from defender2yara.defender.signature.base import BaseSig
 from defender2yara.defender.signature.threat import ThreatBeginSig
+from defender2yara.defender.signature.static import StaticSig
 from defender2yara.defender.threat import Threat
 from defender2yara.defender.vdm import Vdm
 
@@ -58,7 +59,8 @@ class NiceThreatTests(unittest.TestCase):
     def test_legacy_pickle_rebuilds_typed_collections(self):
         threat = NiceThreat(sample_threat(parsed=False))
         for field in ('dexhstr_signatures', 'aggregator_signatures', 'version_checks',
-                      'behavior_signatures', 'nid_signatures', 'pehstr_signatures', 'revoked_certs'):
+                      'behavior_signatures', 'nid_signatures', 'static_signatures',
+                      'pehstr_signatures', 'revoked_certs'):
             delattr(threat, field)
         restored = pickle.loads(pickle.dumps(threat))
         self.assertEqual(restored.pehstr_signatures[0].subrules[0].rule_bytes, b'X555')
@@ -68,7 +70,8 @@ class NiceThreatTests(unittest.TestCase):
         threat = NiceThreat(sample_threat())
         del threat.pehstr_signatures[0].name
         for field in ('dexhstr_signatures', 'aggregator_signatures', 'version_checks',
-                      'behavior_signatures', 'nid_signatures', 'pehstr_signatures', 'revoked_certs'):
+                      'behavior_signatures', 'nid_signatures', 'static_signatures',
+                      'pehstr_signatures', 'revoked_certs'):
             delattr(threat, field)
         restored = pickle.loads(pickle.dumps(threat))
         self.assertEqual(restored.pehstr_signatures[0].name, '')
@@ -80,16 +83,21 @@ class NiceThreatTests(unittest.TestCase):
         app.register_blueprint(views)
         with database.bind_ctx([DbThreat]):
             database.create_tables([DbThreat])
-            threat = NiceThreat(sample_threat())
+            source = sample_threat()
+            static_payload = struct.pack('<IIIIH', 1, 2, 3, 4096, 1) + b'\x11' * 16 + b'\x06#Clean'
+            source.add_signature(Vdm.parse_database(tlv(0x67, static_payload))[0])
+            threat = NiceThreat(source)
             threat.lua_scripts = [b'print("example")']
             threat.yara_rules = ['rule example { condition: true }']
-            DbThreat.create(name=threat.name, sigs='test', sigcount=6, threatObject=pickle.dumps(threat))
+            DbThreat.create(name=threat.name, sigs='test', sigcount=7, threatObject=pickle.dumps(threat))
             response = app.test_client().get('/threat', query_string={'name': threat.name})
             self.assertEqual(response.status_code, 200)
             html = response.get_data(as_text=True)
             for text in ('DEX string signatures', 'PE extended string signatures',
                          'HSTR:Example&amp;SIGATTR:Example', 'os_build &lt; 0x4563',
-                         'No inline conditions', 'X555', 'rule example', 'print('):
+                         'No inline conditions', 'X555', 'rule example', 'print(',
+                         'Static file signatures', '#Clean', 'MD5', 'Prefix match',
+                         'Partial CRC 1', '00000001'):
                 self.assertIn(text, html)
             self.assertIn('&lt;script&gt;', html)
             self.assertNotIn('<script>alert(1)</script>', html)
@@ -105,7 +113,7 @@ class NiceThreatTests(unittest.TestCase):
             self.assertIn('Test:Win32/Example.A', html)
             self.assertIn('Severity', html)
             details = app.test_client().get('/api/threat', query_string={'name': threat.name}).get_json()
-            self.assertEqual(len(details['signatures']), 6)
+            self.assertEqual(len(details['signatures']), 7)
             self.assertEqual(details['lua_scripts'], ['print("example")'])
         database.close()
 
