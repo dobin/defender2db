@@ -42,6 +42,32 @@ sudo apt install libarchive-dev
 
 ## Usage
 
+### Python Lua backend (Windows and Linux)
+
+Lua conversion uses the pure-Python decompiler bundled in this repository at
+`defender_explorer/defender_sig_extractor/lua_decompiler`. It is included in package
+builds; no separate checkout, path configuration, C compiler, `luadec` executable,
+or Docker is required on Windows or Linux.
+
+Only the Lua package is loaded, not Explorer's downloader, signature type table,
+or heuristic YARA generators. The copied Explorer source has no license file;
+its licensing still needs clarification before redistribution.
+The existing root `luadec` binary is unused and retained only as a legacy artifact.
+
+Original MpLua is passed directly to the Python backend, avoiding the old
+integer-to-double fixup and shared temporary file. Failed decompilation falls back
+to bytecode disassembly when possible. Re-run conversion to populate Lua scripts
+in databases previously built on Windows. Decompiled source is best-effort, not
+guaranteed equivalent to the original program; Lua constants are not automatically
+promoted into YARA detections.
+
+YARA rules now use signed, presence-based weighted scoring (`math.to_number`,
+available in the required YARA version), rather than subset enumeration or
+negative-weight vetoes. This preserves the project's scoring model, not the full
+Defender engine semantics. Unknown extended-pattern operations remain approximate
+and are marked low accuracy; malformed/unconvertible patterns are not emitted as
+partial signatures. File-size and optional header restrictions still limit scope.
+
 ### Download / Update virus definition
 
 Download current Defender Signatures (VDM) into `cache/engine` and `cache/vdm`:

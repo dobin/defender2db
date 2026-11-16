@@ -128,6 +128,8 @@ class Vdm:
 
         # parse
         while ptr < len(data):
+            if ptr + 4 > len(data):
+                raise ValueError(f"Truncated signature header at offset {ptr}")
             sig_type = SIG_TYPES[data[ptr]]
             
             if sig_type == "SIGNATURE_TYPE_THREAT_BEGIN":
@@ -146,8 +148,8 @@ class Vdm:
             if len(entry.sig_data) > 0:
                 database.append(entry)
             counter[entry.sig_type] += 1
-            ptr += entry.size + 4
-            progress_bar.update(entry.size + 4)
+            ptr += entry.record_size
+            progress_bar.update(entry.record_size)
 
         progress_bar.close()
         return database
@@ -156,6 +158,7 @@ class Vdm:
     def parse_threats(database:List[BaseSig]) -> List[Threat]:
         # init threats
         threats = []
+        threat = None
         # parse
         # progress bar setup
         progress_bar = tqdm(
@@ -168,10 +171,15 @@ class Vdm:
 
         for sig in database:
             if sig.sig_type == "SIGNATURE_TYPE_THREAT_BEGIN":
+                if threat is not None:
+                    logger.warning("Nested threat BEGIN; discarding incomplete threat")
                 threat = Threat(sig)
                 continue
             elif sig.sig_type == "SIGNATURE_TYPE_THREAT_END":
-                threats.append(threat)
+                if threat is not None:
+                    threats.append(threat)
+                else:
+                    logger.warning("Orphan threat END")
                 threat = None
             if threat:
                 threat.add_signature(sig)
@@ -209,17 +217,21 @@ class Vdm:
             AssertionError: If the decompressed data size does not match the expected size.
         """
         if os.path.exists(filepath):
-            data = open(filepath,"rb").read()
+            with open(filepath, "rb") as stream:
+                data = stream.read()
         else:
             raise FileNotFoundError(filepath)
 
-        base = data.index(b"RMDX") # Look for resource signature
-        if not base:
+        base = data.find(b"RMDX") # Look for resource signature
+        if base < 0 or base + 0x20 > len(data):
             raise ValueError(f"Invalid file format. {filepath}")
         
-        offset, size = struct.unpack("II", data[base + 0x18: base + 0x20])
+        offset, size = struct.unpack("<II", data[base + 0x18: base + 0x20])
+        if base + offset + 8 >= len(data):
+            raise ValueError(f"Invalid compressed resource offset. {filepath}")
         decompressed_data = zlib.decompress(data[base + offset + 8:], -15)
-        assert len(decompressed_data) == size # Ensure correctness
+        if len(decompressed_data) != size:
+            raise ValueError(f"VDM decompressed size mismatch: expected {size}, got {len(decompressed_data)}")
         return decompressed_data
 
     @staticmethod

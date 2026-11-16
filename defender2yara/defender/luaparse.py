@@ -2,33 +2,29 @@ import struct
 import argparse
 import sys
 import io
-import subprocess
+from pathlib import Path
+
+from .lua_backend import decompile_data
 
 import logging
 
 logger = logging.getLogger(__package__)
 
 
-def lua_decompile(filepath) -> bytes:
-    result = subprocess.run(["./luadec", filepath], capture_output=True)
-
-    if result.returncode == 0:
-        return result.stdout
-    else:
-        logger.error("Decompilation failed with error code:", result.returncode)
-        logger.error("Error message:", result.stderr)
+def lua_decompile_data(data: bytes, disassemble: bool = False) -> bytes | None:
+    try:
+        return decompile_data(data, disassemble=disassemble)
+    except Exception as error:
+        logger.warning("Python Lua %s failed: %s", "disassembly" if disassemble else "decompilation", error)
         return None
-    
 
-def lua_disassemble(filepath) -> bytes:
-    result = subprocess.run(["./luadec", "-dis", filepath], capture_output=True)
 
-    if result.returncode == 0:
-        return result.stdout
-    else:
-        logger.error("Disassembly failed with error code:", result.returncode)
-        logger.error("Error message:", result.stderr)
-        return None
+def lua_decompile(filepath) -> bytes | None:
+    return lua_decompile_data(Path(filepath).read_bytes())
+
+
+def lua_disassemble(filepath) -> bytes | None:
+    return lua_decompile_data(Path(filepath).read_bytes(), disassemble=True)
 
 
 # copy of https://raw.githubusercontent.com/commial/experiments/refs/heads/master/windows-defender/lua/parse.py
@@ -47,13 +43,11 @@ def fixup_lua_data(data: bytes) -> tuple[bytes | None, str | None]:
         return None, f"Invalid Lua header: {header.hex()}"
     #assert header == b'\x1bLuaQ\x00\x01\x04\x08\x04\x08\x01'
 
-    func = LuaFunc(fdesc)
-    success, error = func.init()
-    if not success:
-        return None, error if error else "Failed to initialize Lua function"
-    
-    export = None
     try:
+        func = LuaFunc(fdesc)
+        success, error = func.init()
+        if not success:
+            return None, error if error else "Failed to initialize Lua function"
         export = func.export(root=True)
     except Exception as e:
         return None, f"Exception when converting lua: {e}"
@@ -120,6 +114,8 @@ class LuaFunc(object):
         self.nb_instr = self.read_int()
 
         self.instrs = self.stream.read(4 * self.nb_instr)
+        if len(self.instrs) != 4 * self.nb_instr:
+            return False, "Truncated Lua instructions"
 
         self.nb_const = self.read_int()
 
@@ -130,7 +126,10 @@ class LuaFunc(object):
             if cst_type == 4:
                 # String
                 length = self.read_int()
-                self.consts.append(LuaConstString(self.stream.read(length)))
+                value = self.stream.read(length)
+                if len(value) != length:
+                    return False, "Truncated Lua string constant"
+                self.consts.append(LuaConstString(value))
             elif cst_type == 3:
                 # Int
                 self.consts.append(LuaConstNumber(struct.unpack("<q", self.stream.read(8))[0]))

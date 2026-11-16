@@ -12,7 +12,8 @@ from defender2yara.defender.threat import Threat
 from defender2yara.yara.rule import YaraRule
 from defender2yara.defender.vdm import Vdm
 from defender2yara.defender.download import get_latest_signature_vdm, download_latest_signature, parse_mpam_exe
-from defender2yara.defender.luaparse import fixup_lua_data, lua_decompile, lua_disassemble
+from defender2yara.defender.luaparse import fixup_lua_data, lua_decompile, lua_disassemble, lua_decompile_data
+from defender2yara.defender.lua_backend import load_lua_backend
 from defender2yara.defender.signature import *
 from defender2yara.util.utils import hexdump
 import pickle
@@ -332,10 +333,8 @@ def convert_threats(vdm:Vdm):
         desc="Converting signatures",
         leave=False)
 
-    # luadec is currently only available as a Linux binary.
-    convert_lua = sys.platform != "win32"
-    if not convert_lua:
-        logger.info("Windows detected; skipping Lua signature conversion")
+    # Fail once with setup instructions instead of silently omitting all Lua.
+    load_lua_backend()
 
     # Batch processing for faster inserts
     batch_size = 1000
@@ -351,8 +350,7 @@ def convert_threats(vdm:Vdm):
             sigs = " ".join(sig_unique)
 
             niceThreat = NiceThreat(threat)
-            if convert_lua:
-                niceThreat.lua_scripts = get_lua_from_threat(threat)
+            niceThreat.lua_scripts = get_lua_from_threat(threat)
             niceThreat.yara_rules = get_yara_from_threat(threat)
 
             threatObj = pickle.dumps(niceThreat)
@@ -384,23 +382,16 @@ def get_lua_from_threat(threat:Threat) -> List[bytes]:
     for sig in threat.signatures:
         if sig.sig_type == "SIGNATURE_TYPE_LUASTANDALONE":
             lua_header_offset = sig.sig_data.find(b'\x1bLuaQ')
-            lua_data, error = fixup_lua_data(sig.sig_data[lua_header_offset:])
-            if lua_data is None:
-                logger.error(f"Failed to fixup Lua data for threat {threat.threat_name}: {error}")
+            if lua_header_offset < 0:
+                logger.warning("No Lua header in signature for %s", threat.threat_name)
                 continue
-            if lua_data is not None:
-                # write file
-                filepath = os.path.join("cache", "lua.tmp")
-                os.makedirs(os.path.dirname(filepath), exist_ok=True)
-                with open(filepath, "wb") as f:
-                    f.write(lua_data)
-
-                # convert
-                lua_decompiled = lua_decompile(filepath)
-                if b'DECOMPILER ERROR' in lua_decompiled:
-                    lua_disassembled = lua_disassemble(filepath)
-                    lua_decompiled += b'\r\nDisassembly errors, printing opcodes. Use a LLM to interpret it.\r\n' + lua_disassembled
-
+            lua_data = sig.sig_data[lua_header_offset:]
+            lua_decompiled = lua_decompile_data(lua_data)
+            if lua_decompiled is None or b'DECOMPILER ERROR' in lua_decompiled:
+                listing = lua_decompile_data(lua_data, disassemble=True)
+                if listing is not None:
+                    lua_decompiled = (lua_decompiled or b'') + b'\n-- Decompilation incomplete; bytecode disassembly follows.\n' + listing
+            if lua_decompiled is not None:
                 lua_scripts.append(lua_decompiled)
 
     return lua_scripts
@@ -503,6 +494,9 @@ def main(args):
     signature_version:str = ""
     engine_version:str = ""
 
+    if args.convert and not args.download:
+        load_lua_backend()  # Validate before recreating the database.
+
     if args.download:
         logger.info("Downloading latest signature database")
         signature_version, engine_version, use_cache = download_latest_signature(cache_dir,proxy=args.proxy)
@@ -561,10 +555,11 @@ def main(args):
             logger.info(f"Loading base signature file: {base_file}")
             logger.info(f"Creating vdm from files: {vdm_base_path}")
             vdm = Vdm(base_file)
-            vdm.parse_files()
             if os.path.exists(delta_file):
                 logger.info(f"Applying delta patch: {delta_file}")
                 vdm.apply_delta_vdm(delta_file)
+            # Parse the patched data, not the stale base-only signatures.
+            vdm.parse_files()
 
         #logger.info(f"VDM Target signature version: {vdm.version}")
         #logger.info(f"VDM Target signature type   : {vdm.vdm_type}")

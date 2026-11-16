@@ -82,8 +82,20 @@ class YaraString:
 
         p = 0
         hex_string = []
-        while p < len(data)-2:
+        end = len(data) - 2 if is_root else len(data)
+        while p < end:
             if data[p] == WILDCARD_MARKER:
+                if p + 2 > end:
+                    raise ValueError("Truncated wildcard opcode")
+                opcode = data[p+1]
+                if opcode in (1, 2) and p + 3 > end:
+                    raise ValueError("Truncated wildcard operand")
+                if opcode in (3, 4, 5):
+                    if p + 4 > end:
+                        raise ValueError("Truncated wildcard operands")
+                    payload_size = data[p+2] + data[p+3] if opcode == 3 else data[p+3]
+                    if p + 4 + payload_size > end:
+                        raise ValueError("Truncated wildcard sequence")
                 if data[p+1] == 0x01: # static length wildcard
                     wildcard_size = data[p+2]
                     hex_string.extend(["??" for _ in range(wildcard_size)])
@@ -167,7 +179,6 @@ class YaraString:
                 else:
                     is_inaccurate = True
                     hex_string.append(f"{data[p+1]:02x}")
-                    hex_string.append(f"{data[p+2]:02x}")
                     p += 2
             else:
                 hex_string.append(f"{data[p]:02x}")

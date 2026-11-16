@@ -1,5 +1,6 @@
 from typing import List,Union,Tuple
 import json
+import re
 
 from defender2yara.defender.threat import Threat
 from defender2yara.defender.constant import PLATFORM, SUFFIX
@@ -23,9 +24,19 @@ class YaraRule:
             strings:List[YaraString] = []
             subrule:Union[HStrSubRule,HStrExtSubRule]
             for subrule in signature.subrules:
-                rule_string = YaraString(subrule)
+                try:
+                    rule_string = YaraString(subrule)
+                except ValueError:
+                    # Never change scoring by silently dropping a subrule.
+                    strings = []
+                    break
                 if rule_string.string:
                     strings.append(rule_string)
+                else:
+                    strings = []
+                    break
+            if not strings:
+                continue
             condition = YaraCondition(strings,signature,filesize_check,do_header_check)
 
             self.rules.append((signature,strings,condition))
@@ -41,23 +52,13 @@ class YaraRule:
         if self.threat.threat_variant:
             items.append(self.threat.threat_variant)
         if items:
-            items.append(str(self.threat.threat_id))
             name:str = "_".join(items)
-            if name[0].isdigit():
-                name = "_" + name
-            return name.replace("-","_")
         else:
-            name = self.threat.threat_name\
-                .replace("!","_")\
-                .replace("/","_")\
-                .replace("@","_")\
-                .replace(":","_")\
-                .replace(".","_")\
-                .replace("-","_")\
-                .replace("#","_")
-            if name[0].isdigit():
-                name = "_" + name
-            return name
+            name = self.threat.threat_name
+        name = re.sub(r"[^A-Za-z0-9_]", "_", name)[:100] or "threat"
+        if name[0].isdigit():
+            name = "_" + name
+        return f"{name}_{self.threat.threat_id}"
 
     def _set_meta(self):
         self.meta['author'] = "defender2yara"
@@ -115,6 +116,7 @@ class YaraRule:
 
             # construct YARA rule.
             rule = []
+            rule.append('import "math"')
             rule.append(f"rule {self.base_rule_name}_{rule_idx}")
             rule.append("{")
             # write meta section

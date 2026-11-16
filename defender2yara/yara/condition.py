@@ -1,9 +1,7 @@
-from typing import List,Dict,Optional,Union
+from typing import List,Dict,Union
 
-from collections import Counter
 import logging
 from defender2yara.defender.signature.hstr import HStrSig,HStrExtSig
-from defender2yara.util.utils import all_elements_equal
 
 from .strings import YaraString
 
@@ -37,9 +35,6 @@ class YaraCondition:
         self.compose_logical_expression()
 
     def compose_logical_expression(self):
-        positive_weight_list = [string.weight for string in self.strings if string.weight > 0]
-        positive_weight_sum = sum(positive_weight_list)
-
         # add filesize check to improve the scan performance
         if self.filesize_check:
             self.statements.append(f"filesize < {self.filesize_check}")
@@ -58,44 +53,15 @@ class YaraCondition:
             elif "ELFHSTR" in self.signature.sig_type:
                 self.statements.append("uint32(0) == 0x464c457f")
 
-        # to simplify the problem, formulate the condition to exclude any of elements with negative weights.
-        if min([string.weight for string in self.strings]) < 0:
-            self.statements.append("not (any of ($n*))")
-
-        # solve simple cases
-        if self.threshold >= positive_weight_sum:
-            self.statements.append("all of ($x*)")
-            return
-        elif all_elements_equal(positive_weight_list) and self.threshold != positive_weight_sum:
-            self.statements.append(f"{(self.threshold + positive_weight_list[0] - 1)//positive_weight_list[0]} of ($x*)")
-            return
-
-        # solve complex cases
-        statements_or:List[str] = []
-        positive_weight_map = dict(sorted(Counter(positive_weight_list).items(), key=lambda x: x[0], reverse=True))
-        try:
-            subsets = self.generate_subsets(positive_weight_map,self.threshold)
-        except SubsetBudgetExceeded:
-            # The minimal subset search exploded. Warn and fall back to a simplified condition
-            # that is an under-approximation: it can miss detections that require a more
-            # specific weight combination, but the rule remains compilable and informative.
-            self.fallback = True
-            logger.warning(
-                f"Threshold {self.threshold} of {self.signature.sig_type} signature has too many "
-                f"weight combinations ({len(positive_weight_map)} distinct weights); using a simplified condition"
-            )
-            self.statements.append(f"{self.threshold} of ($x*)")
-            return
-
-        for subset in subsets:
-            _tmp = []
-            weight_count = Counter(subset)
-            for w,cnt in weight_count.items():
-                _tmp.append(f"{cnt} of ($x_{w}_*)")
-            condition = "(" + " and ".join(_tmp) + ")"
-            statements_or.append(condition)
-        statements_or.append("all of ($x*)") # to avoid yara compile error
-        self.statements.append(statements_or)
+        # Score each subrule once on presence, not once per occurrence. Signed
+        # arithmetic preserves negative weights without exponential subsets.
+        terms = []
+        for index, string in enumerate(self.strings, 1):
+            prefix = "x" if string.weight > 0 else "n"
+            identifier = f"${prefix}_{abs(string.weight)}_{index}"
+            terms.append(f"({string.weight}) * math.to_number({identifier})")
+        score = " + ".join(terms) if terms else "0"
+        self.statements.append(f"({score}) >= {self.threshold}")
 
     
     @staticmethod
