@@ -121,11 +121,11 @@ class Vdm:
         start_time = time.perf_counter()
         progress_bar = tqdm(
                 total=len(data),
-                unit='MB',
-                unit_scale=1e-6,
-                bar_format='{l_bar}{bar:20}{r_bar}',
+                unit='bytes',
+                bar_format='{l_bar}{bar:20}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {postfix}]',
                 colour='green',
                 desc="Parsing database",
+                postfix="0.00 MB/s",
                 leave=False)
 
         # parse
@@ -169,7 +169,10 @@ class Vdm:
                 database.append(entry)
             counter[entry.sig_type] += 1
             ptr += entry.record_size
+            elapsed = time.perf_counter() - start_time
+            throughput_mb_s = ptr / elapsed / 1_000_000 if elapsed else 0
             progress_bar.update(entry.record_size)
+            progress_bar.set_postfix_str(f"{throughput_mb_s:.2f} MB/s")
 
         progress_bar.close()
         elapsed = time.perf_counter() - start_time
