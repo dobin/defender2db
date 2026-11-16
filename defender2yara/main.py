@@ -332,6 +332,11 @@ def convert_threats(vdm:Vdm):
         desc="Converting signatures",
         leave=False)
 
+    # luadec is currently only available as a Linux binary.
+    convert_lua = sys.platform != "win32"
+    if not convert_lua:
+        logger.info("Windows detected; skipping Lua signature conversion")
+
     # Batch processing for faster inserts
     batch_size = 1000
     batch = []
@@ -346,7 +351,8 @@ def convert_threats(vdm:Vdm):
             sigs = " ".join(sig_unique)
 
             niceThreat = NiceThreat(threat)
-            niceThreat.lua_scripts = get_lua_from_threat(threat)
+            if convert_lua:
+                niceThreat.lua_scripts = get_lua_from_threat(threat)
             niceThreat.yara_rules = get_yara_from_threat(threat)
 
             threatObj = pickle.dumps(niceThreat)
@@ -518,7 +524,7 @@ def main(args):
 
     # Recreate the database for every conversion, including the first run.
     if os.path.exists(db.database):
-        logger.info("Database already exists, removing it.")
+        logger.warning("Database already exists - deleting and recreating it.")
         if not db.is_closed():
             db.close()
         os.remove(db.database)
