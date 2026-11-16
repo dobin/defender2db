@@ -1,7 +1,7 @@
 data/
 rules/
 cache/
-defender2db.egg-info/
+*.egg-info/
 
 # windows defender artifacts
 
@@ -24,12 +24,13 @@ threats.json
 
 .vscode
 
-# python/poetry
+# Python
 
 *.pyc
 
-# Packages
-/dist/*
+# Build artifacts
+/build/
+/dist/
 
 # Unit test / coverage reports
 .coverage
@@ -44,4 +45,3 @@ threats.json
 .mypy_cache
 
 .venv
-/poetry.toml
