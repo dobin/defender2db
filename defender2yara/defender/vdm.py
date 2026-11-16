@@ -150,6 +150,12 @@ class Vdm:
                 entry = KcrceSig(data,ptr)
             elif sig_type == "SIGNATURE_TYPE_SNID":
                 entry = SnidSig(data,ptr)
+            elif sig_type == "SIGNATURE_TYPE_NID":
+                entry = NidSig(data,ptr)
+            elif sig_type == "SIGNATURE_TYPE_NID64":
+                entry = Nid64Sig(data,ptr)
+            elif sig_type in SIGTREE_SIGS:
+                entry = SigTreeSig(data,ptr)
             elif sig_type == "SIGNATURE_TYPE_AAGGREGATOREX":
                 entry = AaAggregatorExSig(data,ptr)
             elif sig_type == "SIGNATURE_TYPE_VERSIONCHECK":
