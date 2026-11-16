@@ -122,7 +122,7 @@ class Vdm:
         progress_bar = tqdm(
                 total=len(data),
                 unit='MB',
-                unit_scale=1_000_000,
+                unit_scale=1e-6,
                 bar_format='{l_bar}{bar:20}{r_bar}',
                 colour='green',
                 desc="Parsing database",
