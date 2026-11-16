@@ -138,6 +138,8 @@ class Vdm:
                 entry = ThreatEndSig(data,ptr)
             elif sig_type == "SIGNATURE_TYPE_PEHSTR":
                 entry = HStrSig(data,ptr)
+            elif sig_type == "SIGNATURE_TYPE_DEXHSTR_EXT":
+                entry = DexHStrExtSig(data,ptr)
             elif sig_type in HSTR_EXT_SIGS:
                 entry = HStrExtSig(data,ptr)
             elif sig_type == "SIGNATURE_TYPE_LUASTANDALONE":
@@ -148,6 +150,10 @@ class Vdm:
                 entry = KcrceSig(data,ptr)
             elif sig_type == "SIGNATURE_TYPE_SNID":
                 entry = SnidSig(data,ptr)
+            elif sig_type == "SIGNATURE_TYPE_AAGGREGATOREX":
+                entry = AaAggregatorExSig(data,ptr)
+            elif sig_type == "SIGNATURE_TYPE_VERSIONCHECK":
+                entry = VersionCheckSig(data,ptr)
             else:
                 entry = BaseSig(data,ptr)
             # check if the sig_data has valid data size
