@@ -8,13 +8,22 @@ class KcrceSig(BaseSig):
     """
     SIGNATURE_TYPE_KCRCE (0x80).
 
-    Layout (little endian), derived from mpengine + database analysis:
+    Base layout (16 bytes, little endian), derived from mpengine + database
+    analysis:
 
         u32 crc1
         u32 crc2
         u32 crc3
         u16 region        window size / anchor offset (0x1000 and 0x400 dominate)
         u16 flags         observed 0x0000, 0x8000, 0xc000
+
+    Newer databases also carry an inline name after the base record:
+
+        u8  name_length
+        u8  name[name_length]
+
+    The name is not NUL-terminated.  It is used for named KCRCE records such as
+    `!#KCRC:Emotet.A42`.
 
     The three values at +0 are full-entropy 32-bit CRC32s.  mpengine stores
     four related values per file in its FileHashes table (KCRC1, KCRC2, KCRC3,
@@ -34,11 +43,19 @@ class KcrceSig(BaseSig):
         self.parse_common_header(data, ptr)
         assert self.sig_type == SIG_TYPES[0x80]
 
-        if len(self.sig_data) != 16:
+        if len(self.sig_data) < 16:
             raise ValueError(
-                f"Unexpected KCRCE payload size: {len(self.sig_data)}"
+                f"Truncated KCRCE signature: {len(self.sig_data)} bytes"
             )
 
-        self.crc1, self.crc2, self.crc3, self.region, self.flags = struct.unpack(
+        self.crc1, self.crc2, self.crc3, self.region, self.flags = struct.unpack_from(
             "<IIIHH", self.sig_data
         )
+
+        # Extended form: one-byte length followed by the name (no NUL).
+        self.record_name = None
+        self.record_name_raw = b""
+        if len(self.sig_data) > 16:
+            name_length = self.sig_data[16]
+            self.record_name_raw = self.sig_data[17:17 + name_length]
+            self.record_name = self.record_name_raw.decode("utf-8", "replace")
