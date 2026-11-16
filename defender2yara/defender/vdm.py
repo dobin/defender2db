@@ -2,6 +2,7 @@ from typing import List, Tuple
 import pickle
 import os
 import struct
+import time
 import zlib
 from collections import defaultdict
 import exiftool
@@ -117,10 +118,11 @@ class Vdm:
         entry:BaseSig
         database:List[BaseSig] = []
 
-        # progress bar setup
+        start_time = time.perf_counter()
         progress_bar = tqdm(
                 total=len(data),
-                unit='bytes',
+                unit='MB',
+                unit_scale=1_000_000,
                 bar_format='{l_bar}{bar:20}{r_bar}',
                 colour='green',
                 desc="Parsing database",
@@ -170,6 +172,14 @@ class Vdm:
             progress_bar.update(entry.record_size)
 
         progress_bar.close()
+        elapsed = time.perf_counter() - start_time
+        throughput_mb_s = len(data) / elapsed / 1_000_000 if elapsed else 0
+        logger.info(
+            "Parsed %.2f MB in %.2f seconds (%.2f MB/s)",
+            len(data) / 1_000_000,
+            elapsed,
+            throughput_mb_s,
+        )
         return database
 
     @staticmethod
