@@ -1,6 +1,7 @@
 data/
 rules/
 cache/
+defender2db.egg-info/
 
 # windows defender artifacts
 

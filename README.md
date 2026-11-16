@@ -1,14 +1,10 @@
 # defender2db
 
-A modification of [defender2yara](https://github.com/t-tani/defender2yara/). 
+Download and parse Microsoft Defender Antivirus signatures into a searchable SQLite database. The project includes Lua parsing and a web interface for searching threats. It was originally based on [defender2yara](https://github.com/t-tani/defender2yara/).
 
 Live at [defendersearch.r00ted.ch](https://defendersearch.r00ted.ch)
 
-* Add LUA parsing
-* Push Defender data into a Sqlite DB
-* Web interface for searching
-
-Its work in progress.
+This project is a work in progress.
 
 Microsoft ASR rules are in [result/asr_rules](https://github.com/dobin/defender2db/tree/main/result/asr_rules).
 All 50'000 LUA scripts are in [result/lua](https://github.com/dobin/defender2db/tree/main/result/lua).
@@ -16,29 +12,31 @@ All 50'000 LUA scripts are in [result/lua](https://github.com/dobin/defender2db/
 Data available at [defender2db_data](https://github.com/dobin/defender2db_data)
 
 
-## Installation using `Poetry`
+## Installation using `uv`
 
-1. Clone the GitHub repository:
+1. Install [uv](https://docs.astral.sh/uv/getting-started/installation/) if it is not already installed.
 
-```sh
-git clone https://github.com/t-tani/defender2yara.git
-```
-
-2. Move to the cloned directory:
+2. Clone this repository:
 
 ```sh
-cd defender2yara
+git clone https://github.com/dobin/defender2db.git
 ```
 
-3. Install the dependencies using `Poetry`:
+3. Move to the cloned directory:
 
 ```sh
-poetry install
+cd defender2db
 ```
 
-Maybe have to install `libarchive-dev`:
+4. Create the project environment and install dependencies:
+
+```sh
+uv sync
 ```
-# apt install libarchive-dev
+
+On Debian/Ubuntu, `libarchive-dev` may also be required:
+```
+sudo apt install libarchive-dev
 ```
 
 
@@ -49,7 +47,7 @@ Maybe have to install `libarchive-dev`:
 Download current Defender Signatures (VDM) into `cache/engine` and `cache/vdm`:
 
 ```sh
-poetry run python -m defender2yara --download
+uv run defender2db --download
 ```
 
 Result:
@@ -67,13 +65,13 @@ drwxr-xr-x 4 dobin dobin 4096 Nov 21 09:05 1.441
 
 Convert to `./cache/threats.db` SQLite DB. File will be overwritten!
 ```sh
-poetry run python -m defender2yara --convert
+uv run defender2db --convert
 ```
 
 Display first few entries of the sqlite db:
 
 ```sh
-poetry run python tools/dbtest.py
+uv run python tools/dbtest.py
 ```
 
 
@@ -82,7 +80,7 @@ poetry run python tools/dbtest.py
 Start web server to search and browse the definitions: 
 
 ```sh
-$ poetry run python3 web.py
+$ uv run python web.py
 defender2db web interface
 Listen on: 0.0.0.0 5002
  * Serving Flask app 'web'
@@ -95,7 +93,7 @@ Listen on: 0.0.0.0 5002
 Get the ASR rules into `rules/`:
 
 ```sh
-poetry run python -m defender2yara --asr
+uv run defender2db --asr
 ```
 
 
@@ -104,14 +102,14 @@ poetry run python -m defender2yara --asr
 Convert VDM to a mega pickle `cache/mpas.vdm.pickle` and `cache/mpav.vdm.pickle`: 
 
 ```sh
-poetry run python -m defender2yara --topickle
+uv run defender2db --topickle
 ```
 
 Use the pickle instead of converting the VDM (can save a little bit of time):
 
 Also: Convert to a mega pickle: 
 ```sh
-poetry run python -m defender2yara --convert --frompickle
+uv run defender2db --convert --frompickle
 ```
 
 

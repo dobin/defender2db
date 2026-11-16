@@ -10,7 +10,7 @@ from defender2yara.util.utils import is_validate_filesize
 def get_version():
     pyproject_path = Path(__file__).parent.parent / 'pyproject.toml'
     pyproject_data = toml.load(pyproject_path)
-    return pyproject_data['tool']['poetry']['version']
+    return pyproject_data['project']['version']
 
 
 def run():
