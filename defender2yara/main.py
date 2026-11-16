@@ -516,12 +516,15 @@ def main(args):
             logger.error("No signature version found. Please download the latest signature database with --download option.")
             sys.exit(1)
 
-    # TODO
+    # Recreate the database for every conversion, including the first run.
     if os.path.exists(db.database):
         logger.info("Database already exists, removing it.")
+        if not db.is_closed():
+            db.close()
         os.remove(db.database)
-        db.connect()
-        db.create_tables([DbThreat, DbMetadata])
+
+    db.connect(reuse_if_open=True)
+    db.create_tables([DbThreat, DbMetadata])
 
     # Update or create metadata entry
     metadata = DbMetadata.create(
