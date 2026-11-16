@@ -100,6 +100,18 @@ Display first few entries of the sqlite db:
 uv run python tools/dbtest.py
 ```
 
+Browse stored YARA rules with `tools/yaraview.py`. It opens the database read-only
+and displays up to five rules by default. Options include `--name Banload`
+(case-insensitive substring), `--row-id 12` (SQLite row ID, not Defender ID),
+`--limit 10`, `--list` (list threats with rules), `--check` (compile displayed
+rules), and `--db path/to/threats.db`. Only open trusted databases: stored objects
+are deserialized using Python pickle.
+
+Lua warnings include the threat name/ID, zero-based signature index, signature
+type, decompressed VDM record offset, payload size, and first 48 payload bytes in
+hex. Offsets refer to the patched/decompressed stream, not the compressed VDM
+file. Raw signatures remain stored in the database even when Lua conversion fails.
+
 
 ### Web Application
 

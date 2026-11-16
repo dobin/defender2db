@@ -379,18 +379,29 @@ def convert_threats(vdm:Vdm):
 
 def get_lua_from_threat(threat:Threat) -> List[bytes]:
     lua_scripts = []
-    for sig in threat.signatures:
+    for signature_index, sig in enumerate(threat.signatures):
         if sig.sig_type == "SIGNATURE_TYPE_LUASTANDALONE":
+            offset = getattr(sig, "offset", None)
+            context = (
+                f"threat={threat.threat_name!r} threat_id={getattr(threat, 'threat_id', 'unknown')} "
+                f"signature_index={signature_index} (zero-based) "
+                f"type={sig.sig_type} type_id={getattr(sig, 'sig_type_id', 'unknown')} "
+                f"vdm_offset={hex(offset) if offset is not None else 'unknown'} "
+                f"payload_size={len(sig.sig_data)} prefix_hex={sig.sig_data[:48].hex()}"
+            )
             lua_header_offset = sig.sig_data.find(b'\x1bLuaQ')
             if lua_header_offset < 0:
-                logger.warning("No Lua header in signature for %s", threat.threat_name)
+                logger.warning("No Lua header: %s", context)
                 continue
             lua_data = sig.sig_data[lua_header_offset:]
             lua_decompiled = lua_decompile_data(lua_data)
             if lua_decompiled is None or b'DECOMPILER ERROR' in lua_decompiled:
+                logger.warning("Lua decompilation incomplete: %s lua_header_offset=%d; trying disassembly", context, lua_header_offset)
                 listing = lua_decompile_data(lua_data, disassemble=True)
                 if listing is not None:
                     lua_decompiled = (lua_decompiled or b'') + b'\n-- Decompilation incomplete; bytecode disassembly follows.\n' + listing
+                else:
+                    logger.warning("Lua disassembly failed: %s lua_header_offset=%d", context, lua_header_offset)
             if lua_decompiled is not None:
                 lua_scripts.append(lua_decompiled)
 

@@ -144,7 +144,13 @@ class LuaTests(unittest.TestCase):
     def test_missing_header_and_failed_decompile(self):
         sig = SimpleNamespace(sig_type='SIGNATURE_TYPE_LUASTANDALONE', sig_data=b'no Lua')
         threat = SimpleNamespace(threat_name='test', signatures=[sig])
-        self.assertEqual(get_lua_from_threat(threat), [])
+        sig.offset = 1234
+        threat.threat_id = 42
+        with self.assertLogs('defender2yara', level='WARNING') as logs:
+            self.assertEqual(get_lua_from_threat(threat), [])
+        message = '\n'.join(logs.output)
+        for detail in ('threat_id=42', 'signature_index=0', 'vdm_offset=0x4d2', 'payload_size=6', 'prefix_hex=6e6f204c7561'):
+            self.assertIn(detail, message)
         sig.sig_data = mplua_chunk()
         with patch('defender2yara.main.lua_decompile_data', side_effect=[None, b'listing']):
             self.assertIn(b'listing', get_lua_from_threat(threat)[0])
