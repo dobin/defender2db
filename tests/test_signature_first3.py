@@ -1,3 +1,4 @@
+import struct
 import unittest
 
 from defender2yara.defender.signature.kcrce import KcrceSig
@@ -21,6 +22,10 @@ class StaticSigTests(unittest.TestCase):
         self.assertEqual(sig.crc32, 0x08023922)
         # CRC32 of the whole file equals the 64 KiB partial CRC for small files.
         self.assertEqual(sig.hash3, sig.crc32)
+        self.assertTrue(sig.prefix_match)
+        self.assertEqual(sig.partial_crc1, sig.hash1)
+        self.assertEqual(sig.partial_crc3, sig.hash2)
+        self.assertEqual(sig.partial_crc2, sig.hash3)
 
     def test_md5_variant(self):
         # Virus:Win32/MPTestFile.2004
@@ -48,6 +53,45 @@ class StaticSigTests(unittest.TestCase):
         self.assertEqual(sig.flags, 0x2000)
         self.assertEqual(sig.crc32, 0xBDC0AFEC)
         self.assertIsNone(sig.record_name)
+        self.assertFalse(sig.prefix_match)
+
+    def test_partial_crc_windows_collapse_at_4k(self):
+        # Real record with file_size == 0x1000: all three partial CRC windows
+        # cover exactly the same bytes, so the hashes are identical.
+        sig = StaticSig(tlv(0x67, bytes.fromhex(
+            "7e3da31e7e3da31e7e3da31e001000000010"
+            "2d9e2f2bc26ecbf19c1d1f3093a03c3c2c7f7091")))
+        self.assertEqual(sig.hash_type, "sha1")
+        self.assertEqual(sig.file_size, 0x1000)
+        self.assertEqual(sig.flags, 0x1000)
+        self.assertEqual(sig.hash1, sig.hash2)
+        self.assertEqual(sig.hash2, sig.hash3)
+
+    def test_sha256_variant(self):
+        sha256 = bytes(range(32))
+        name = b"#ClnFile"
+        payload = (
+            struct.pack("<IIIIH", 0x11223344, 0x55667788, 0x99AABBCC, 0x123, 0x4000)
+            + sha256
+            + bytes([len(name)])
+            + name
+        )
+        sig = StaticSig(tlv(0x67, payload))
+        self.assertEqual(sig.hash_type, "sha256")
+        self.assertEqual(sig.sha256, sha256)
+        self.assertEqual(sig.record_name, "#ClnFile")
+        self.assertIsNone(sig.crc32)
+
+    def test_truncated_sha1_variant(self):
+        # 0x3000 stores the first 4 bytes of SHA-1.
+        payload = (
+            struct.pack("<IIIIH", 0x11223344, 0x55667788, 0x99AABBCC, 0x123, 0x3000)
+            + bytes.fromhex("deadbeef")
+        )
+        sig = StaticSig(tlv(0x67, payload))
+        self.assertEqual(sig.hash_type, "sha1_32")
+        self.assertEqual(sig.sha1_32, 0xEFBEADDE)
+        self.assertIsNone(sig.sha1)
 
     def test_named_variant(self):
         # 22-byte base + name length + "#cleanfile"

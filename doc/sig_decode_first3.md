@@ -1,7 +1,7 @@
 # Decoding SNID / STATIC / KCRCE
 
 Research notes for the three most common Defender signature types. Evidence comes from
-`cache/threats.db` (sampled across distinct threats, not one family) and from
+`cache/threats.db` (all STATIC records plus samples from distinct threats) and from
 `cache/mpengine.dll` via the PyGhidra MCP server.
 
 All multi-byte values are little endian.
@@ -11,7 +11,7 @@ All multi-byte values are little endian.
 | Type | ID | Payload | What it is |
 |------|----|--------:|------------|
 | `SIGNATURE_TYPE_SNID` | `0x7e` | 21 | Reference to a shared signature record: 20-byte SHA1 key + 1-byte record type |
-| `SIGNATURE_TYPE_STATIC` | `0x67` | 22 / 34 / 38 | File hash signature: 3 partial CRC32s + file size + strong hash (CRC32, MD5 or SHA1) |
+| `SIGNATURE_TYPE_STATIC` | `0x67` | 22 / 34 / 38 / 50 (+name) | Known-file fingerprint: partial CRC1 / CRC3 / CRC2 windows + file size + optional strong hash (CRC32, MD5, SHA1, SHA1[:4] or SHA256) + optional inline tag |
 | `SIGNATURE_TYPE_KCRCE` | `0x80` | 16 | Compact "known file" CRC signature: 3 CRC32s + region/size + flags |
 
 mpengine's `getsigtype` equivalent is `FUN_180337818`; it confirms the IDs (0x7e/0x67/0x80)
@@ -21,58 +21,146 @@ in this engine build.
 
 ## 1. `SIGNATURE_TYPE_STATIC` (0x67)
 
+### What it is
+
+A **known-file fingerprint**. `SIGNATURE_TYPE_STATIC` is the file member of a small
+family of hash-like record types (`0x67`..`0x6d`; `FUN_180859798` maps the scan-object
+kind to the record type). mpengine loads these records into the "static match" table
+built by `FUN_18092e220` / `FUN_18092be48` alongside the trusted-publisher (`0x70`) and
+revoked-certificate (`0x6c`) tables. The matcher runs in the static (non-emulated)
+signature phase and can:
+
+* raise a detection for a known file,
+* mark a file as clean/friendly (`#ClnFile`, `#Clean`, ...), optionally for a TTL,
+* flag a file as expensive to scan (`#ExpensiveFile`),
+* apply FP suppressions / exclusions (`#FP:...`, `#Exclusion...`),
+* attach a classification or feedback name (`#PUA:Win32/...`, `#Trojan:JS/...`).
+
+It is therefore not just a file-hash detection record: it is Defender's file reputation
+and classification table.
+
 ### Layout
 
 ```
 offset  size  field
-0x00    4     hash1
-0x04    4     hash2
-0x08    4     hash3        CRC32 over first min(file_size, 0x10000) bytes
-0x0c    4     file_size
-0x10    2     flags        0x0001 = MD5, 0x1001 = SHA1, 0x2001 = CRC32
-0x12    n     file hash    n = 16 (MD5), 20 (SHA1) or 4 (CRC32)
+0x00    4     hash1        partial CRC1: first min(size, 0x1000) bytes, zero padded
+0x04    4     hash2        partial CRC3: last 0x1000 bytes of the first `size` bytes
+0x08    4     hash3        partial CRC2: first min(size, 0x10000) bytes
+0x0c    4     file_size    full u32 file/prefix size
+0x10    2     flags        bit 0 = prefix match; bits 12..14 = strong hash algorithm
+0x12    n     strong hash  n = 4 (CRC32), 16 (MD5), 20 (SHA1), 4 (SHA1[:4]), 32 (SHA256)
+0x12+n  1     name_len     optional, only present in extended records
+0x13+n  ...   name[ name_len ]   non-NUL-terminated tag, e.g. `#ClnFile`
 ```
 
-Observed lengths in the current DB:
+The on-disk dword order is **CRC1, CRC3, CRC2** (not 1, 2, 3). The engine names come
+from the `FileHashes` table (`PartialCRC1`, `PartialCRC2`, `PartialCRC3`); in the
+record, `hash3` is `PartialCRC2`, which is why `hash3 == CRC32(file)` for files of at
+most 64 KiB.
 
-| Length | flags | trailing hash | count in sample |
-|-------:|-------|---------------|----------------:|
-| 22 | `0x2001` | CRC32 (4 bytes) | 62,660 |
-| 34 | `0x0001` | MD5 (16 bytes) | 20 |
-| 38 | `0x1001` | SHA1 (20 bytes) | 2,087 |
+### The three partial CRCs
 
-`flags & 0x0fff == 1` means "has a trailing full-file hash"; the upper nibble selects the
-algorithm (`0x0000` MD5, `0x1000` SHA1, `0x2000` CRC32).
+`FUN_1800ee5b8` (report/`FileHashes` path) computes them as:
 
-### Evidence
+* `partialcrc1` = CRC32 of the first `min(size, 0x1000)` bytes, then zeros appended to
+  0x1000 bytes (the lookup/index key, built by `FUN_18028c670`),
+* `partialcrc2` = CRC32 of the first `min(size, 0x10000)` bytes,
+* `partialcrc3` = CRC32 of the last 0x1000 bytes of the first `size` bytes; for
+  `size < 0x1000` the window is zero-padded **before** the data.
 
-* The 22-byte form stores `CRC32(file)` in the trailing dword.
-* `hash3 == trailing CRC32` exactly when `file_size <= 0x10000`, and never when
-  `file_size > 0x10000` (verified on 1,019 distinct-threat samples: 533 equal, all
-  <= 64 KiB; 486 different, all >= 64 KiB).
-* mpengine's partial-CRC code (`FUN_1800ee5b8`) computes:
-  * `partialcrc2` = CRC32 of the first `min(file_size, 0x10000)` bytes,
-  * `partialcrc1` = CRC32 of the first 0x1000 bytes,
-  * `partialcrc3` = CRC32 of the last 0x1000 bytes.
-  The same values are persisted in the engine's `FileHashes` table
-  (`PartialCRC1/2/3`, `KCRC1/2/3/3n`).
-* The engine's CRC helper is `FUN_180676c58`: standard reflected CRC-32 (poly
-  `0xEDB88320`), initial value `0xffffffff`, **no final xor**. In Python:
-  `zlib.crc32(data) ^ 0xffffffff`.
-* 38-byte records carry 20 trailing random bytes; this matches the known
-  "SHA1 of the file" static form. 34-byte records are the MD5 form (20 test-file
-  signatures named `Virus:Win32/MPTestFile.2004` / `Trojan:Win32/Mpteststat`).
+The matcher (`FUN_180214dec` → `FUN_180213c60`) uses them in this order:
 
-`hash1`/`hash2` are the other two partial CRCs. Which is first-window vs last-window is
-not proven yet, but the three-CRC set and the `hash3`/file-size relationship are solid.
+1. binary-search the table by `hash1` (`FUN_1802153d0`),
+2. compare `hash3` (first 64 KiB window) against the file,
+3. compare `hash2` (last 4 KiB window) against the file,
+4. check the `#CFG:` feature gate and verify the strong hash over the first `size`
+   bytes (`FUN_1800f1728`, `GetHashes(Custom)`).
+
+`FUN_180676c58` is the engine CRC helper: standard reflected CRC-32 (poly `0xEDB88320`),
+initial value `0xffffffff`, **no final xor**. In Python: `zlib.crc32(data) ^ 0xffffffff`.
+
+Empirical checks over 262,852 unique STATIC records in the merged compendium:
+
+* all 75 records with `file_size == 0x1000` have `hash1 == hash2 == hash3` (all three
+  windows cover the same bytes),
+* the 22-byte CRC32 form satisfies `hash3 == trailing CRC32` for every record with
+  `file_size <= 0x10000` (16,243 records); it never does for `file_size > 0x10000`
+  (227,284 records),
+* 4 records with an `!#Exclusion:` tag carry a zero trailing hash; they are the only
+  small records where the relation fails.
+
+### Flags
+
+| value | meaning |
+|-------|---------|
+| `0x0000` | MD5 (16-byte strong hash) |
+| `0x1000` | SHA1 (20 bytes) |
+| `0x2000` | CRC32 (4 bytes) |
+| `0x3000` | first 4 bytes of SHA1 (4 bytes) |
+| `0x4000` | SHA256 (32 bytes) |
+| `0x0001` | prefix/truncated match: `size <= file_size` instead of equality |
+
+Only two bits are ever set: bit 0 is the size relaxation, bits 12..14 select the hash.
+`0x3000` and `0x4000` are supported by the engine (`FUN_180213c60` compares against
+`SHA1[:4]` and `SHA256`) but do not occur in signature version 1.463.330.0.
+
+### Size handling and prefix matches
+
+`FUN_180212cb4` normally returns `internal_flags & 0x0fffffff`. When that field is the
+sentinel `0x0fffffff`, the size is read from the shared hash blob instead, so the
+serialised `file_size` is a full `u32` (observed up to ~1 GiB).
+
+When `flags & 0x0001` is **clear**, the record only matches a file whose size equals
+`file_size`. When it is **set**, the engine accepts `size <= actual_file_size`, and the
+strong hash covers only the first `file_size` bytes: the record matches a prefix of a
+longer file (truncated/partial match). This is the common case for the CRC32 form
+(~92% of records) and rarer for SHA1 (~64%).
+
+### Trailing name / tag
+
+The base record can be followed by `u8 length` + tag bytes. In the current DB the
+trailing tag appears only in `!InfrastructureShared`, where all 35,428 STATIC records
+are tagged (5,154 distinct tags); per-threat and `!Infrastructure` records are unnamed.
+Tags starting with `#` are engine directives (`FUN_180148d84`); `!` marks
+internal/non-customer records (`!#...`).
+
+| tag pattern | meaning |
+|-------------|---------|
+| `#ClnFile`, `#ClnFile:<minutes>`, `#ClnFileInMin:<minutes>`, `#Clean`, `#CleanFile`, `#clean` | clean/friendly verdict, optional TTL (`FUN_180478774`) |
+| `#ClnInst*` | installer-file variant of the clean verdict |
+| `#CFG:<A/M/P>:<tag>` | feature-gated directive; `FUN_180213c60` checks the A/M/P features, e.g. `#CFG:A:ClnFile` |
+| `#ExpensiveFile` | performance hint ("Engine.Perf.ExpensiveFile") |
+| `#Exclusion`, `#Exclusion_<ver>_<reason>`, `#Exclude` | static-match exclusions (some carry a zero strong hash) |
+| `#FP:<family>` | false-positive suppression for a family, e.g. `#FP:Bulta` |
+| `#<ThreatType>:<platform>/<family>` | classification attached to the fingerprint, e.g. `#PUA:Win32/Creprote`, `#Trojan:JS/Cardst` |
+| `!#PUA:Block:...`, `!#ALF:...`, `!#ALFPER:...`, `!#TEL:...`, `!#SLF:...`, `!#STATIC:...` | internal/allow-list/telemetry/test feeds |
+| `#MpCloudToVDMBloomFilterXPLAT` | cloud→VDM bloom-filter feed entries |
+
+A tag is not required: most records are pure hashes.
 
 ### Samples
 
 ```
-22 bytes: 7952f311 04d126ea 22390208 736e0000 0120 22390208
-          hash1    hash2    hash3    size=0x6e73 flags=0x2001 crc32
-34 bytes: 1f79d57e b21ec595 29d988cb 00900000 0100 9a026f3295fefe4c4647ea5ba6bd43da
-38 bytes: 69860403 923603bc f4533191 6c0c0000 0110 02a27e325ff806402628ac68780906d07f285b9a
+22 bytes, CRC32, prefix bit:
+7952f311 04d126ea 22390208 736e0000 0120 22390208
+hash1    hash2    hash3    size=0x6e73 flags=0x2001 crc32 (= hash3, size < 64 KiB)
+
+22 bytes, CRC32, exact size:
+f01bb56e 5905aa8c ecafc0bd 00420000 0020 ecafc0bd
+hash1    hash2    hash3    size=0x4200 flags=0x2000 crc32 (= hash3)
+
+34 bytes, MD5:
+1f79d57e b21ec595 29d988cb 00900000 0100 9a026f3295fefe4c4647ea5ba6bd43da
+
+38 bytes, SHA1:
+69860403 923603bc f4533191 6c0c0000 0110 02a27e325ff806402628ac68780906d07f285b9a
+
+22 + 8 bytes, tag `#ClnFile`:
+136a3a00 b987d2ac 49e8d167 d0970f00 0020 c83df1cf 08 23 436c6e46696c65
+hash1    hash2    hash3    size=0x0f97d0 flags=0x2000 crc32  len tag
+
+size == 0x1000 (all three windows collapse):
+7e3da31e 7e3da31e 7e3da31e 00100000 0010 2d9e2f2bc26ecbf19c1d1f3093a03c3c2c7f7091
 ```
 
 ---
@@ -186,6 +274,16 @@ New layout parsers (registered in `Vdm.parse_database`):
 * `defender2yara/defender/signature/snid.py` – `SnidSig`
 * `tests/test_signature_first3.py` – fixtures from real DB records
 
+`StaticSig` exposes the engine naming as well as the on-disk order: `hash1/2/3` are
+kept for compatibility and aliased to `partial_crc1`, `partial_crc3`, `partial_crc2`.
+It also decodes `prefix_match` (bit 0) and the strong-hash variants `md5`, `sha1`,
+`crc32`, `sha1_32` and `sha256`, plus the inline tag.
+
 They do not yet generate YARA rules for these types. STATIC's SHA1/MD5 trailing hash and
 KCRCE's CRCs are hashes of the analysed file, so they are best emitted as hash-based
-conditions (or metadata/IOCs) rather than `$string` patterns.
+conditions (or metadata/IOCs) rather than `$string` patterns. For example a STATIC
+record can be represented as `filesize == size and hash.sha1(0, filesize) == "..."`;
+the CRC32 form is the engine's raw CRC (no final xor), and the two partial windows are
+awkward because the last-window offset depends on `file_size`. A future rule generator
+should prefer the strong hash and use the partial CRCs only as a prefilter.
+
