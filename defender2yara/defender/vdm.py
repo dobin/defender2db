@@ -142,6 +142,12 @@ class Vdm:
                 entry = HStrExtSig(data,ptr)
             elif sig_type == "SIGNATURE_TYPE_LUASTANDALONE":
                 entry = LuaSig(data,ptr)
+            elif sig_type == "SIGNATURE_TYPE_STATIC":
+                entry = StaticSig(data,ptr)
+            elif sig_type == "SIGNATURE_TYPE_KCRCE":
+                entry = KcrceSig(data,ptr)
+            elif sig_type == "SIGNATURE_TYPE_SNID":
+                entry = SnidSig(data,ptr)
             else:
                 entry = BaseSig(data,ptr)
             # check if the sig_data has valid data size

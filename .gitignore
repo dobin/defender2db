@@ -2,6 +2,7 @@ data/
 rules/
 cache/
 *.egg-info/
+opencode.json
 
 # windows defender artifacts
 
