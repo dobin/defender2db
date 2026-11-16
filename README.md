@@ -4,10 +4,7 @@ Download and parse Microsoft Defender Antivirus signatures into a searchable SQL
 
 Live at [defendersearch.r00ted.ch](https://defendersearch.r00ted.ch)
 
-This project is a work in progress.
-
-Microsoft ASR rules are in [result/asr_rules](https://github.com/dobin/defender2db/tree/main/result/asr_rules).
-All 50'000 LUA scripts are in [result/lua](https://github.com/dobin/defender2db/tree/main/result/lua).
+Microsoft ASR rules are in [result/asr_rules](https://github.com/dobin/defender2db_data/tree/main/asr_lua).
 
 Data available at [defender2db_data](https://github.com/dobin/defender2db_data)
 
@@ -125,6 +122,20 @@ Listen on: 0.0.0.0 5002
  * Debug mode: off
 ```
 
+REST search API (returns matching threat summaries):
+
+```text
+GET /api/threats?threat_name=metasploit
+```
+
+Use the exact threat name to retrieve one full threat, including signatures and scripts:
+
+```text
+GET /api/threat?name=Win32%2FBearfoos.A
+```
+
+Both endpoints return JSON. Missing query parameters return `400`; an exact name not
+found by `/api/threat` returns `404`.
 
 ### ASR rules
 
