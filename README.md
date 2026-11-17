@@ -98,6 +98,20 @@ GET /api/threat?name=Win32%2FBearfoos.A
 Both endpoints return JSON. Missing query parameters return `400`; an exact name not
 found by `/api/threat` returns `404`.
 
+### MCP Server
+
+The stdio MCP server exposes the same two operations as tools: `search_threats`
+(name substring search) and `get_threat` (exact-name details). Start it with:
+
+```sh
+uv run defender2db-mcp
+```
+
+Configure your MCP client to launch this command from the project directory so it
+uses the same `cache/threats.db` database as the web application. Search results and
+threat details use the same fields and serialization as the REST API; missing input
+or an unknown exact name is returned as a tool error.
+
 ### ASR rules
 
 Get the ASR rules into `rules/`:

@@ -5,6 +5,7 @@ import logging
 from collections import Counter
 from typing import List, Tuple
 from defender2yara.defender.dbthreat import db, DbThreat, DbMetadata
+from defender2yara.threat_api import get_threat_details, search_threats
 from peewee import DoesNotExist
 import urllib.parse
 import pickle
@@ -82,57 +83,13 @@ def search_threat():
     return render_template('threats.html', threats=dbThreats, threat_name=threat_name)
 
 
-def _threat_summary(db_threat):
-    return {
-        "name": db_threat.name,
-        "sigs": db_threat.sigs,
-        "sigcount": db_threat.sigcount,
-    }
-
-
-def _threat_details(db_threat):
-    threat = pickle.loads(db_threat.threatObject)
-    details = _threat_summary(db_threat)
-    details.update({
-        "id": getattr(threat, "id", None),
-        "category": getattr(threat, "category", None),
-        "severity": getattr(threat, "severity", None),
-        "type": getattr(threat, "type", None),
-        "platform": getattr(threat, "platform", None),
-        "family": getattr(threat, "family", None),
-        "variant": getattr(threat, "variant", None),
-        "suffixes": getattr(threat, "suffixes", None),
-        "yara_rules": getattr(threat, "yara_rules", []),
-        "lua_scripts": [
-            script.decode('utf-8', errors='replace') if isinstance(script, bytes) else script
-            for script in getattr(threat, "lua_scripts", [])
-        ],
-        "revoked_certs": [],
-        "signatures": [],
-    })
-
-    for sig in getattr(threat, "signatures", []):
-        sig_data = getattr(sig, "sig_data", b"")
-        if getattr(sig, "sig_type", None) == "SIGNATURE_TYPE_REVOKED_CERTIFICATE":
-            details["revoked_certs"].append(sig_data[3:23].hex())
-        details["signatures"].append({
-            "type_id": getattr(sig, "sig_type_id", None),
-            "type": getattr(sig, "sig_type", None),
-            "size": getattr(sig, "size", None),
-            "data_hex": sig_data.hex() if isinstance(sig_data, bytes) else str(sig_data),
-        })
-
-    return details
-
-
 @views.route("/api/threats")
 def api_search_threats():
     threat_name = request.args.get('threat_name', '').strip()
     if not threat_name:
         return jsonify({"error": "Query parameter 'threat_name' is required."}), 400
 
-    db_threats = DbThreat.select().where(DbThreat.name.contains(threat_name))
-    return jsonify([_threat_summary(threat) for threat in db_threats])
+    return jsonify(search_threats(threat_name))
 
 
 @views.route("/api/threat")
@@ -142,11 +99,9 @@ def api_get_threat():
         return jsonify({"error": "Query parameter 'name' is required."}), 400
 
     try:
-        db_threat = DbThreat.get(DbThreat.name == threat_name)
+        return jsonify(get_threat_details(threat_name))
     except DoesNotExist:
         return jsonify({"error": "Threat not found."}), 404
-
-    return jsonify(_threat_details(db_threat))
 
 
 @views.app_template_filter('urlencode')
