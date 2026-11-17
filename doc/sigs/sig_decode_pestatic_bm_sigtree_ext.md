@@ -434,12 +434,37 @@ whole `0x4000..0x40b1` range, e.g. `0x4011 = BM_ProcessStart`,
 Two ids are synthetic and do not appear in that switch:
 
 * `0xf000` is `LuaCallSigattrBM`: `FUN_180157be0` rewrites the context
-  attribute id to `0xf000` when a node has the Lua-callback control bit.
-* `0x40ff` is not named anywhere in mpengine.  All 4,407 `0x40ff` edges in the
-  shipped database use a wide (`0x40`), 36-character left value and an "any"
-  right side; 36 is the exact length of a GUID.  It is probably an internal /
-  cloud-only event carrying a fixed-size identifier, but the name is not
-  recovered.
+  attribute id to `0xf000` when a node has the Lua-callback control bit.  The
+  live value is a BM group name such as `!BMGroup:Emotet_ProcExclusions.QA`
+  (observed at runtime); it is not a normal event field.
+* `0x40ff` is a **signature anchor**, not a live event.  All 4,407 `0x40ff`
+  edges in the shipped database have an "any" right side, a 36-character left
+  value, and the node is either the root (control bit `0x0004`) or the final
+  node.  The left value is either a CRC32 of an opaque 36-character identifier
+  (3,809 edges) or an inline **MD5** of it (598 edges).  Related rules share
+  the same anchor; e.g. `0x8e454e61` is used by 96 rules added as one group,
+  `0x2453f5cd` by 30, and so on.
+
+  Evidence that it is a compiler-assigned rule/group identity rather than a
+  live attribute:
+
+  * it is not produced by the BM event switch or by any BM event emitter in
+    mpengine (the literal `0x40ff` only occurs in an unrelated bit mask);
+  * in many trees it is the **first** node with the root control bit, where a
+    root condition would have to be true before any event can be checked;
+  * the same value is reused by groups of rules compiled together, which does
+    not happen for a process/file/registry value;
+  * no plaintext candidate in the VDM or mpengine produces these CRCs/MD5s.
+    A scan of every ASCII/UTF-16 string and every 26/36-character window in
+    all four VDM files and mpengine found no match; the one `!BMGroup:Emotet`
+    hit is a 32-bit collision and does not explain the group.
+  * runtime instrumentation of `FUN_1800d5880` never sees `0x40ff` as a
+    condition operand; it is handled by the tree-walker/anchor path, not the
+    live-value matcher.
+
+  Treat the prefix argument as an opaque `signature_anchor_id`.  Do not guess a
+  GUID from a CRC match; use `sigtree_value_crc()` only to test a specific
+  candidate, and expect that the compiler id is not present in the VDM.
 
 #### Condition flags (`FUN_1800d5880`)
 
@@ -467,7 +492,28 @@ also why the same edge can match a long path with a short suffix, e.g.
 `FUN_180676604` (wide).  The CRC is CRC-32 with init `0xffffffff`, no final
 XOR, and ASCII case folding; wide strings hash their characters as
 lowercased UTF-16LE code units.  The compile-time `z`/`w` words are the same
-CRC, so some can be resolved to the original text by matching known strings:
+CRC, so some can be resolved to the original text by matching known strings.
+
+**Runtime confirmation.**  Hooking `FUN_1800d5880` and logging the value
+descriptor at `param_5` (pointer at `+0`, flags at `+0xa`; a zero stored length
+means "read to the NUL") shows the real value the engine hashes.  For
+`BM_ProcessStart` / `BM_ProcessCreate` (`0x4010`/`0x4011`) the value is the
+**full process command line**, not just the image path.  Observed examples:
+
+```
+C:\Program Files\Git\cmd\git.exe
+"C:\Program Files\Git\cmd\git.EXE" --git-dir C:\Users\...\snapshot
+"C:\WINDOWS\System32\WindowsPowerShell\v1.0\powershell.EXE" -NoLogo ...
+```
+
+This is why the 26-character `CobaltStrike.J!sms` value is a **command-line
+suffix**, not a file-path suffix: the J rule chains on an SMS detection and on
+a process whose command line ends with a particular 26-character string.  A
+filesystem-only dictionary (all files under `C:\Windows`, `Program Files`,
+`%TEMP%`, ...) will not find it.  The engine's own runtime log is the reliable
+way to recover it: run the behaviour with the matcher probe attached and read
+the `attr=0x4011 v="..."` line.  The generic probe and target-table generator
+are described in §5.
 
 | value (length) | text |
 |----------------|------|
@@ -484,6 +530,8 @@ CRC, so some can be resolved to the original text by matching known strings:
 | `0x25be5a07` (13) | `\certutil.exe` |
 | `0xde038d24` (9) | `mshta.exe` |
 
+These are candidate matches, not proof; CRC32 collisions are possible.
+
 `BM_EngineInternal` (`0x4017`) is the generic internal event bus.  Its first
 parameter is a **tag** such as `SMS_THREAT`, `BM_FILEOPEN`, `CmdLowfi`,
 `INTEGRITY` or `FILE_COPY`, and its second parameter is the tag payload
@@ -497,15 +545,17 @@ The record (local id `2465931`, 4 edges, variant 0) decodes to:
 
 | # | event | left | right |
 |--:|-------|------|-------|
-| 1 | `BM_ProcessStart` (`0x4011`) | wide suffix, 26 chars (`0xf4202780`) | any |
+| 1 | `BM_ProcessStart` (`0x4011`) | command-line suffix, 26 wide chars, CRC `0xf4202780` | any |
 | 2 | `BM_EngineInternal` (`0x4017`) | wide prefix `SMS_THREAT` | `HackTool:Win32/CobaltStrike.I!sms` |
 | 3 | `BM_EngineInternal` (`0x4017`) | wide prefix `SMS_THREAT` | `HackTool:Win64/CobaltStrike.I!sms` |
-| 4 | `0x40ff` (unnamed) | wide prefix, 36 chars (`0x1762ac1e`) | any |
+| 4 | `BM_SignatureAnchor` (`0x40ff`) | 36-character opaque anchor id, CRC `0x1762ac1e` | any |
 
-So edge 2/3 are a detection chain: the `J` behaviour signature fires when the
-`I` SMS threat (32- or 64-bit) has been detected.  Edge 1 is a process-start
-predicate whose 26-character suffix is not yet resolved, and edge 4 is an
-unresolved 36-character internal identifier (GUID-sized).
+Edge 2/3 are a detection chain: the `J` behaviour signature fires when the
+`I` SMS threat (32- or 64-bit) has been detected.  Edge 1 is a real
+command-line suffix predicate; the exact 26-character suffix needs a sample or
+the runtime probe.  Edge 4 is the signature's compiler-assigned anchor id, not
+a live value; `0x1762ac1e` must stay opaque rather than be guessed from a CRC
+match.
 
 ## 4. Resulting code
 
@@ -515,8 +565,10 @@ unresolved 36-character internal identifier (GUID-sized).
   `BM_ACTION_BITS`, `bits_to_names`, `names_to_bits`.
 * `defender2yara/defender/signature/sigtree.py` — attribute id / value
   properties, flag rendering, `TREE_KIND_ATTRIBUTE_NAMESPACES`,
-  `BM_EVENT_NAMES`, `KNOWN_VALUE_STRINGS`, `describe_side()` and
-  `enrich_sigtree_details()`.
+  `BM_EVENT_NAMES`, `BM_EVENT_VALUE_HINTS` / `bm_event_value_hint()`,
+  `KNOWN_VALUE_STRINGS`, `sigtree_value_crc()`, `describe_side()` and
+  `enrich_sigtree_details()`.  Edge details now include `value_hint` (for
+  example `process command line` for `0x4010`/`0x4011`).
 * `defender2yara/threat_api.py` — enriches stored sig-tree details on read so
   the HTML/API/MCP views show the decoded event names without re-importing the
   database.
@@ -527,7 +579,49 @@ None of these types emits YARA output: PESTATIC is a region hash, BM_INFO is
 reporting metadata, and the sig-tree boolean/edge model is still not confirmed
 (the extracted patterns and hashes remain available on the parsed object).
 
-## 5. Open questions
+## 5. Runtime recovery of opaque value words
+
+Static dictionaries are not sufficient: some value words are hashes of runtime
+values (command lines, registry paths) and some are compiler-assigned ids.
+The reliable general method is to observe the engine while it evaluates the
+tree, or to observe the exact bytes it hashes.
+
+The laboratory probes used for this report live in the companion
+`DefenderReversingHelper` checkout (`dll_injector/detours_payload/`):
+
+| probe | hook | what it records |
+|-------|------|-----------------|
+| `MpTreeProbe.c` | `mpengine+0xd0ebc` (`FUN_1800d0ebc`), `+0x6765c0`/`+0x676604` (`FUN_1806765c0`/`FUN_180676604`) | BM event id + value descriptors, and **any narrow/wide CRC input whose result is in a generated target table** |
+| `MpMatchProbe.c` | `mpengine+0xd5880` (`FUN_1800d5880`) | node attr id, expected hash (`cond`/`w`), live value string and flags for every condition match |
+
+`mptree_targets.h` is generated from the database: the `0x40ff` value words
+plus any other unresolved words.  In this repository use:
+
+```powershell
+python tools/sigtree_probe.py targets --out mptree_targets.h --header --all-unresolved
+python tools/sigtree_probe.py parse C:\data\mptree_probe_<pid>.log --out resolved.json
+```
+
+The `parse` command verifies every log line against `sigtree_value_crc()` before
+accepting a `hash -> text` pair.  The hooks are installed with the existing
+`injector.exe ... --ppl --allow-dynamic-code --fix-handle --kernel-thread
+--restore` flow.  Only matching CRC inputs are written, so the log stays small
+even during a full scan.
+
+The key runtime facts recovered this way:
+
+* `BM_ProcessStart`/`BM_ProcessCreate` values are full **command lines**;
+* `BM_ModuleLoad` values are module paths;
+* the `0xf000` Lua callback receives `!BMGroup:<name>` values;
+* `0x40ff` is never seen by the condition matcher as an operand — it is an
+  anchor/metadata node, not a value condition.
+
+This also produces a reusable CRC dictionary: every `CRC <kind>
+result=0x... text="..."` line is a verified `(hash, text)` pair.  Feed those
+pairs back into `KNOWN_VALUE_STRINGS` (or a side-car table) to make future
+imports decode the same words without re-running the engine.
+
+## 6. Open questions
 
 * The BM_INFO option word (`+0x14`, `< 0x1000`) is stored but its bit names are
   not recovered.  It is not the same namespace as the tag/action mask.
@@ -535,11 +629,19 @@ reporting metadata, and the sig-tree boolean/edge model is still not confirmed
   need a different interpretation (flags?) and are currently only flagged.
 * The sigattr attribute-id -> field-name mapping is per object class and was
   not recovered; only the namespaces above are known.
-* `0x40ff` in BM trees is not present in the engine's event-name switch.  Its
-  edges always carry a 36-character wide left value (GUID-sized) and an "any"
-  right side; the event producer/name is still unknown.
+* `0x40ff` is a compiler-assigned signature anchor/group id.  The engine does
+  not expose the original 36-character string, and it is not present in the
+  VDM; only its CRC32 or MD5 is shipped.  The exact id remains opaque.
+* The 26-character command-line suffix of `CobaltStrike.J!sms`
+  (`0xf4202780`) remains unresolved.  It is a real command-line condition;
+  recover it by running a triggering sample with the matcher probe, not by
+  guessing from CRC32.
+* Tree variants with an inline **MD5** condition on `0x40ff` (598 edges) use
+  the same opaque anchor; the MD5 is not the MD5 of any threat name, file name
+  or condition text in the VDM.
 * The upper 16 bits of `x` (node control bits, e.g. `0x04`, `0x02`) change how
   the walker advances between nodes.  They are exposed as `control_flags` but
   the full state machine (`FUN_180157be0`) is not decoded yet.
 * Value words that are not in the known-value table remain 32-bit CRCs; they
-  cannot be inverted, only matched against candidate strings.
+  cannot be inverted, only matched against candidate strings with
+  `sigtree_value_crc()` or captured at runtime as above.

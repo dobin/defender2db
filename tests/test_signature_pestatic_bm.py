@@ -201,8 +201,9 @@ class SigTreeAttributeTests(unittest.TestCase):
             "BM_ProcessStart",
             "BM_EngineInternal",
             "BM_EngineInternal",
-            "unnamed internal BM event/pseudo-attribute",
+            "BM_SignatureAnchor (rule/group identity, not a live event)",
         ])
+        self.assertEqual(sig.edges[0].value_hint, "process command line")
         self.assertEqual(sig.edges[0].left_flags_text, "suffix|wide")
         self.assertEqual(sig.edges[0].left_predicate,
                          "ends with crc32=0xf4202780 (26 wide chars)")
@@ -213,6 +214,13 @@ class SigTreeAttributeTests(unittest.TestCase):
         self.assertEqual(sig.edges[2].right_value_text,
                          "HackTool:Win64/CobaltStrike.I!sms")
         self.assertIn("SMS_THREAT", sig.to_details()["decoded_summary"])
+
+    def test_value_crc_matches_engine_values(self):
+        from defender2yara.defender.signature.sigtree import sigtree_value_crc
+
+        self.assertEqual(sigtree_value_crc("SMS_THREAT"), 0x98E9D724)
+        self.assertEqual(sigtree_value_crc("mshta.exe"), 0xDE038D24)
+        self.assertEqual(sigtree_value_crc("\\powershell.exe"), 0xC7F18C20)
 
     def test_enrich_legacy_details(self):
         from defender2yara.defender.signature.sigtree import enrich_sigtree_details

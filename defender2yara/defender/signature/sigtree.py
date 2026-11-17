@@ -1,4 +1,5 @@
 import struct
+import zlib
 
 from .base import BaseSig
 from defender2yara.defender.constant import SIG_TYPES
@@ -212,17 +213,80 @@ BM_EVENT_NAMES = {
     0x40B1: "BM_PipeOpen",
 }
 
+# What the *value* of a BM event attribute is.  This matters for the
+# word-only conditions: the engine gives ``BM_ProcessStart`` /
+# ``BM_ProcessCreate`` the full process command line, not just the image path,
+# and gives ``BM_ModuleLoad`` the module path.  The hints are descriptive only;
+# the condition words are still hashes of the live value.
+BM_EVENT_VALUE_HINTS = {
+    0x4000: "file path",
+    0x4001: "file path",
+    0x4002: "file path",
+    0x4003: "file path",
+    0x4004: "file path",
+    0x4005: "file metadata",
+    0x4006: "registry key",
+    0x4007: "registry key",
+    0x4008: "registry key",
+    0x4009: "registry key/value",
+    0x400A: "registry value",
+    0x400B: "network endpoint",
+    0x400C: "network data",
+    0x400E: "remote thread",
+    0x4010: "process command line",
+    0x4011: "process command line",
+    0x4012: "network indication",
+    0x4014: "module path",
+    0x4017: "internal tag / payload",
+    0x4019: "process",
+    0x402B: "process",
+    0x4032: "folder path",
+    0x406B: "signature / trigger name",
+    0x408E: "parent process image",
+    0x40FF: "opaque compiler-assigned anchor id",
+    0xF000: "Lua callback group name",
+}
+
 # Attribute ids that are not BM event ids.
 SPECIAL_ATTRIBUTE_NAMES = {
-    0xF000: "LuaCallSigattrBM (Lua sigattr callback)",
-    0x40FF: "unnamed internal BM event/pseudo-attribute",
+    0xF000: "LuaCallSigattrBM (Lua callback / !BMGroup)",
+    0x40FF: "BM_SignatureAnchor (rule/group identity, not a live event)",
 }
+
+_CASE_FOLD = bytes((value + 32 if 0x41 <= value <= 0x5A else value)
+                   for value in range(256))
+
+
+def sigtree_value_crc(text: str, wide: bool = True) -> int:
+    """CRC32 used for sig-tree value words.
+
+    The engine hashes the ASCII-lowercased text with init ``0xffffffff`` and
+    no final XOR.  Wide values are hashed as UTF-16LE code units; for ASCII
+    text this is equivalent to ``(folded_char, 0)`` per character.
+    ``FUN_1806765c0`` / ``FUN_180676604`` are the narrow / wide variants.
+    """
+    if wide:
+        data = bytearray()
+        for char in text:
+            codepoint = ord(char)
+            low = codepoint & 0xFF
+            high = (codepoint >> 8) & 0xFF
+            if high == 0:
+                data += bytes((_CASE_FOLD[low], 0))
+            else:
+                data += bytes((low, high))
+        payload = bytes(data)
+    else:
+        payload = bytes(_CASE_FOLD[value] for value in text.encode("latin-1", "replace"))
+    return (zlib.crc32(payload) & 0xFFFFFFFF) ^ 0xFFFFFFFF
+
 
 # A value-only sigtree side stores only a CRC32 of the attribute text.  The
 # engine computes it over lowercased text with init 0xffffffff and no final
 # XOR (``FUN_1806765c0`` narrow, ``FUN_180676604`` wide, called from
-# ``FUN_1802371d0``).  The strings below were confirmed by matching database
-# values; they turn the otherwise opaque ``z``/``w`` words into readable text.
+# ``FUN_1802371d0``).  The strings below are *candidate* matches only: CRC32
+# is a 32-bit hash and a match is not proof, especially when scanning large
+# candidate corpora.  Use ``sigtree_value_crc()`` to test a specific string.
 # The key is ``(crc32, length)`` where length is in characters for wide values.
 KNOWN_VALUE_STRINGS = {
     # BM_EngineInternal event tags (first parameter).
@@ -260,7 +324,7 @@ KNOWN_VALUE_STRINGS = {
     (0x76EEB249, 8): "\\net.exe",
     (0xF63025E3, 8): "\\reg.exe",
     (0x6F188314, 9): "\\curl.exe",
-    # Confirmed SMS threat-chain values (Sigma: 0x4017 + SMS_THREAT).
+    # Candidate SMS threat-chain values (Sigma: 0x4017 + SMS_THREAT).
     (0x060419AD, 33): "HackTool:Win32/CobaltStrike.I!sms",
     (0x1B31E528, 33): "HackTool:Win64/CobaltStrike.I!sms",
 }
@@ -275,11 +339,18 @@ def bm_event_name(attribute_id: int, tree_kind: int = None) -> str:
     return f"0x{attribute_id:04x}"
 
 
+def bm_event_value_hint(attribute_id: int, tree_kind: int = None):
+    """Engine value semantics for a BM event attribute, or ``None``."""
+    if tree_kind != 2:
+        return None
+    return BM_EVENT_VALUE_HINTS.get(attribute_id)
+
+
 def describe_value(value: int, length: int, flags: int) -> str:
     """Render the expected value word of a value-only condition."""
     known = KNOWN_VALUE_STRINGS.get((value, length))
     if known is not None:
-        return repr(known)
+        return f"'{known}'"
     kind = "wide chars" if flags & FLAG_WIDE else "bytes"
     return f"crc32=0x{value:08x} ({length} {kind})"
 
@@ -477,6 +548,7 @@ class SigTreeEdge:
             "attribute_id": self.attribute_id,
             "attribute_id_hex": f"0x{self.attribute_id:04x}",
             "attribute_name": self.attribute_name,
+            "value_hint": self.value_hint,
             "control_flags": self.control_flags,
             "control_flags_hex": f"0x{self.control_flags:04x}",
             "left_flags_text": edge_flags_text(self.left_flags),
@@ -534,40 +606,55 @@ class SigTreeEdge:
         return bm_event_name(self.attribute_id, self.tree_kind)
 
     @property
+    def value_hint(self):
+        """What kind of live value the BM event carries, when known."""
+        return bm_event_value_hint(self.attribute_id, self.tree_kind)
+
+    @property
     def left_value_text(self):
-        """Known plain text for the left value word, or ``None``."""
-        if self.condition("left") is not None:
-            return None
+        """Known plain text for the left value word, or ``None``.
+
+        A condition blob normally overrides the value word.  The compiler can
+        still fill ``z``/``w`` with a CRC, so the candidate-value table is
+        checked either way.  These are hints, not proof.
+        """
         return KNOWN_VALUE_STRINGS.get((self.z, self.left_length))
 
     @property
     def right_value_text(self):
         """Known plain text for the right value word, or ``None``."""
-        if self.condition("right") is not None:
-            return None
         return KNOWN_VALUE_STRINGS.get((self.w, self.right_length))
 
     @property
     def left_predicate(self) -> str:
         """Readable predicate for the left side of the edge."""
-        return describe_side(
-            self.left_flags, self.left_length, self.left_value,
-            self.condition("left"),
+        condition = self.condition("left")
+        text = describe_side(
+            self.left_flags, self.left_length, self.left_value, condition,
         )
+        if condition is not None and condition.is_hash and self.left_value_text:
+            text += f"; value word decodes to '{self.left_value_text}'"
+        return text
 
     @property
     def right_predicate(self) -> str:
         """Readable predicate for the right side of the edge."""
-        return describe_side(
-            self.right_flags, self.right_length, self.right_value,
-            self.condition("right"),
+        condition = self.condition("right")
+        text = describe_side(
+            self.right_flags, self.right_length, self.right_value, condition,
         )
+        if condition is not None and condition.is_hash and self.right_value_text:
+            text += f"; value word decodes to '{self.right_value_text}'"
+        return text
 
     @property
     def summary(self) -> str:
         """One-line decoded description of the edge."""
+        name = self.attribute_name
+        if self.value_hint:
+            name = f"{name} [{self.value_hint}]"
         return (
-            f"{self.attribute_name}: left {self.left_predicate}; "
+            f"{name}: left {self.left_predicate}; "
             f"right {self.right_predicate}"
         )
 
@@ -660,7 +747,12 @@ class SigTreeSig(BaseSig):
     record — the "EXT" is the in-record condition blob.  ``SIGTREE_BM``
     (0xb3) is the behaviour-monitoring flavour: in the shipped database every
     ``0xb3`` record uses ``tree_kind == 2`` and it is the type that carries
-    most of the behaviour string patterns.
+    most of the behaviour string patterns.  Its edges test BM event ids
+    (``BM_EVENT_NAMES``); ``0xf000`` is a Lua-callback pseudo-attribute and
+    ``0x40ff`` is a compiler-assigned *signature anchor* (rule/group id).
+    ``0x40ff`` is not a live BM event: it appears as a root (control bit
+    ``0x04``) or as the final node, always has an "any" right side, and carries
+    either a CRC32 or an MD5 of a 36-character opaque identifier.
 
     All 17,940 ``0xb3``, 15,058 ``0x40`` and 4,207 ``0x41`` records in the
     shipped database consume their payload exactly (0x40: 0 patterns/hashes;
@@ -879,8 +971,10 @@ def enrich_sigtree_details(details: dict) -> dict:
             attribute_id = int(edge.get("y", 0)) & 0xFFFF
             edge["attribute_id"] = attribute_id
         name = bm_event_name(attribute_id, kind)
+        hint = bm_event_value_hint(attribute_id, kind)
         edge["attribute_id_hex"] = f"0x{attribute_id:04x}"
         edge["attribute_name"] = name
+        edge["value_hint"] = hint
         if name not in names:
             names.append(name)
 
@@ -898,17 +992,16 @@ def enrich_sigtree_details(details: dict) -> dict:
                 value = edge.get("z" if side == "left" else "w", 0)
                 edge[f"{side}_value"] = value
             condition = by_side.get(side)
-            if condition is None:
-                known = KNOWN_VALUE_STRINGS.get((value, length))
-            else:
-                known = None
+            known = KNOWN_VALUE_STRINGS.get((value, length))
+            predicate = describe_side(flags, length, value, condition)
+            if condition is not None and condition.is_hash and known:
+                predicate += f"; value word decodes to '{known}'"
             edge[f"{side}_flags_text"] = edge_flags_text(flags)
             edge[f"{side}_value_text"] = known
-            edge[f"{side}_predicate"] = describe_side(
-                flags, length, value, condition,
-            )
+            edge[f"{side}_predicate"] = predicate
+        label = f"{name} [{hint}]" if hint else name
         edge["summary"] = (
-            f"{name}: left {edge['left_predicate']}; "
+            f"{label}: left {edge['left_predicate']}; "
             f"right {edge['right_predicate']}"
         )
         edges.append(edge)
