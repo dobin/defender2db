@@ -5,6 +5,7 @@ import argparse
 from flask import Flask
 import logging
 
+from dotenv import load_dotenv
 from defender2yara.defender.dbthreat import DEFAULT_DATABASE
 
 
@@ -12,6 +13,7 @@ from app.views import views
 
 
 if __name__ == "__main__":
+	load_dotenv()
 	logging.getLogger('werkzeug').setLevel(logging.WARNING)
 
 	parser = argparse.ArgumentParser()

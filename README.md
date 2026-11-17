@@ -115,6 +115,9 @@ BLOBs; `raw_record` is empty unless conversion used `--include-raw`.
 
 ### Web Application
 
+Copy `.env.example` to `.env` and set `DOMAIN` to the public base URL for the REST
+API and remote MCP endpoint.
+
 Start web server to search and browse the definitions: 
 
 ```sh
@@ -156,22 +159,33 @@ are removed. The web server accepts `--db cache\threats.db`; Flask's
 
 ### MCP Server
 
-The stdio MCP server exposes `search_threats` (name substring search),
-`get_threat` (local threat ID), `get_signature` (local signature ID), and
-`get_raw_signature` (explicit raw access as `data_hex`). Start it with:
+The MCP server exposes `search_threats` (name substring search), `get_threat`
+(local threat ID), `get_signature` (local signature ID), and `get_raw_signature`
+(explicit raw access as `data_hex`). Copy `.env.example` to `.env` and set `DOMAIN`
+to the public base URL. The web page shows the Streamable HTTP endpoint as
+`DOMAIN/mcp`.
+
+For a local MCP client, start the stdio server with:
 
 ```sh
 uv run defender2db-mcp
 ```
 
-Configure your MCP client to launch this command from the project directory so it
-uses the same `cache/threats.db` database as the web application. Search results and
-threat details use the same fields and serialization as the REST API; missing input
-or an unknown local ID is returned as a tool error. Raw-unavailable errors explain
-how to rebuild with raw capture. Python readers expose `search_threats`,
-`get_threat_details`, `get_signature_details`, and `get_raw_record`, each accepting
-an optional `database` path. Missing rows raise `LookupError`; omitted raw capture
-raises `RawUnavailableError`.
+For a remote MCP client, start the Streamable HTTP server with:
+
+```sh
+uv run defender2db-mcp-http
+```
+
+It listens on `127.0.0.1:8000` by default. Configure the TLS reverse proxy for
+`DOMAIN` to forward `/mcp` to this server. The HTTP server also reads `MCP_HOST`
+and `MCP_PORT` from `.env` if its bind address or port needs to change. Search
+results and threat details use the same fields and serialization as the REST API;
+missing input or an unknown local ID is returned as a tool error. Raw-unavailable
+errors explain how to rebuild with raw capture. Python readers expose
+`search_threats`, `get_threat_details`, `get_signature_details`, and `get_raw_record`,
+each accepting an optional `database` path. Missing rows raise `LookupError`; omitted
+raw capture raises `RawUnavailableError`.
 
 ### ASR rules
 

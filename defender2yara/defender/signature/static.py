@@ -47,8 +47,7 @@ STATIC_MATCH_MODE_NOTES = {
         "first N bytes are fingerprinted, so bytes appended after N are not checked."
     ),
     False: (
-        "Exact size: the file length must match exactly. Appending or truncating "
-        "even one byte prevents a match."
+        "Exact size: the file length must match exactly."
     ),
 }
 

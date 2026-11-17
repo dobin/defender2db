@@ -19,9 +19,6 @@
           {% endfor %}
           {% if threat.suffixes %}<span><strong>Suffixes</strong> {{ threat.suffixes|join(', ') }}</span>{% endif %}
         </div>
-        <details class="threat-signature-summary"><summary>Signature counts <span class="badge text-bg-secondary">{{ threat.signature_count }}</span></summary>
-          <ul class="signature-counts">{% for kind, count in signature_counts %}<li><code>{{ kind|replace('SIGNATURE_TYPE_', '') }}</code><span>{{ count }}</span></li>{% endfor %}</ul>
-        </details>
       </header>
 
       {% for language in ['yara', 'lua'] %}
@@ -74,12 +71,13 @@
       {% endfor %}
 
       {% if threat.boundary_ids %}
-      <section class="threat-section"><h2>Threat framing records</h2>
+      <h2> References </h2>
+      <section class="threat-section"><h3>Threat framing records</h3>
         <ul>{% for local_id in threat.boundary_ids %}<li><a href="{{ url_for('views.api_get_signature', local_id=local_id) }}">Boundary {{ local_id }} metadata / JSON</a>
           {% if threat.raw_available %} · <a href="{{ url_for('views.api_get_raw_record', local_id=local_id) }}">Download exact raw TLV</a>{% else %} · Raw record unavailable{% endif %}</li>{% endfor %}</ul>
       </section>
       {% endif %}
-      <section class="threat-section"><h2>Original signature order</h2>
+      <section class="threat-section"><h3>Original signature order</h3>
         <ol>{% for sig in threat.signatures %}<li><a href="#signature-{{ sig.id }}">{{ sig.offset|hexnum }} · {{ sig.type }} · {{ sig.decode_status }}</a></li>{% endfor %}</ol>
       </section>
     </div>

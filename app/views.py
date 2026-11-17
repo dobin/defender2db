@@ -1,6 +1,7 @@
 from collections import Counter
 from io import BytesIO
 import json
+import os
 from pathlib import Path
 
 from flask import Blueprint, abort, current_app, jsonify, redirect, render_template, request, send_file, url_for
@@ -50,7 +51,16 @@ def database():
 def index():
     with read_session(database()) as session:
         metadata = session.scalar(select(ImportInfo).where(ImportInfo.id == 1))
-        return render_template('index.html', metadata=metadata)
+        domain = (os.environ.get('DOMAIN') or request.url_root.rstrip('/')).rstrip('/')
+        return render_template(
+            'index.html', metadata=metadata, domain=domain,
+            mcp_endpoint=f'{domain}/mcp' if domain else '/mcp',
+        )
+
+
+@views.route('/about')
+def about():
+    return render_template('about.html')
 
 
 @views.route('/threat/<int:local_id>')

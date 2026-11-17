@@ -18,11 +18,13 @@ dependencies = [
 	"flask>=3.1.1,<4.0.0",
 	"packaging>=25.0,<26.0",
 	"mcp>=1.9.0,<2.0.0",
+	"python-dotenv>=1.2.0,<2.0.0",
 ]
 
 [project.scripts]
 defender2db = "defender2yara.__main__:run"
 defender2db-mcp = "defender2yara.mcp_server:main"
+defender2db-mcp-http = "defender2yara.mcp_server:main_http"
 
 [build-system]
 requires = ["setuptools>=68"]
