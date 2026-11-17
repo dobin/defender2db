@@ -38,13 +38,17 @@
       </tr>
       <tr>
         <th>Conversion Date</th>
-        <td>{{ metadata.conversion_datetime.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+        <td>{{ metadata.converted_at }}</td>
       </tr>
     </tbody>
   </table>
   {% endif %}
 
-  <p>REST API: search with <code>/api/threats?threat_name=...</code> or get an exact threat with <code>/api/threat?name=...</code>.</p>
+  {% if metadata %}<p>Schema {{ metadata.schema_version }} · Decoder {{ metadata.decoder_version }} ·
+    Raw records: {{ 'captured' if metadata.raw_included else 'not captured; rebuild with --convert --include-raw to capture' }}</p>{% endif %}
+  <p>REST API: search with <code>/api/threats?threat_name=...</code>, then use a returned local ID at
+    <code>/api/threats/ID</code>. Signature JSON: <code>/api/signatures/ID</code>;
+    optional exact raw TLV download: <code>/api/signatures/ID/raw</code>.</p>
 
   <h2>Source</h2>
   Source at <a href="https://github.com/dobin/defender2db">github.com/dobin/defender2db</a>

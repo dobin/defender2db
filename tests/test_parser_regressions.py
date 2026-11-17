@@ -93,8 +93,8 @@ class ContainerTests(unittest.TestCase):
              patch('defender2yara.main.get_latest_signature_version', return_value='1.463.330.0'), \
              patch('defender2yara.main.get_latest_engine_version', return_value='1.1.26100.4'), \
              patch('defender2yara.main.os.path.exists', side_effect=lambda path: str(path).endswith('dlta.vdm')), \
-             patch('defender2yara.main.db'), patch('defender2yara.main.DbMetadata'), \
-             patch('defender2yara.main.convert_threats'), \
+             patch('defender2yara.main.build_database') as build, \
+             patch('defender2yara.main.convert_threats') as convert, \
              patch('defender2yara.main.Vdm') as factory:
             factory.return_value.apply_delta_vdm.side_effect = lambda path: calls.append('delta')
             factory.return_value.parse_files.side_effect = lambda: calls.append('parse')
@@ -102,6 +102,26 @@ class ContainerTests(unittest.TestCase):
                 main(args)
             self.assertEqual(exit_info.exception.code, 0)
         self.assertEqual(calls, ['delta', 'parse', 'delta', 'parse'])
+        build.assert_called_once()
+        self.assertEqual(build.call_args.kwargs['signature_version'], '1.463.330.0')
+        self.assertEqual(build.call_args.kwargs['engine_version'], '1.1.26100.4')
+        self.assertFalse(build.call_args.kwargs['include_raw'])
+        self.assertEqual(convert.call_count, 2)
+        for call in convert.call_args_list:
+            self.assertEqual(call.args, (factory.return_value, build.return_value.__enter__.return_value, False))
+
+    def test_asr_does_not_open_or_replace_database(self):
+        args = SimpleNamespace(download=False, convert=False, proxy=None, asr=True)
+        with patch('defender2yara.main.get_latest_signature_version', return_value='1.463.330.0'), \
+             patch('defender2yara.main.get_latest_engine_version', return_value='1.1.26100.4'), \
+             patch('defender2yara.main.os.path.exists', return_value=False), \
+             patch('defender2yara.main.build_database') as build, \
+             patch('defender2yara.main.parse_asr') as parse, \
+             patch('defender2yara.main.Vdm'):
+            with self.assertRaises(SystemExit):
+                main(args)
+        build.assert_not_called()
+        self.assertEqual(parse.call_count, 2)
 
     def test_extended_record_advancement(self):
         data = bytes([0, 255, 255, 255]) + struct.pack('<I', 3) + b'abc'

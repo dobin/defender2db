@@ -99,9 +99,19 @@
     border-bottom: 1px solid var(--bs-border-color, #ccc);
   }
 
+  .threat-heading {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.5em 0.75em;
+    margin-bottom: 0.55em;
+  }
+
   .threat-title {
-    font-size: 1.5rem;
-    margin-bottom: 0.4em;
+    font-size: clamp(1.6rem, 2.5vw, 2rem);
+    font-weight: 650;
+    line-height: 1.2;
+    margin: 0;
   }
 
   .threat-overview-grid {

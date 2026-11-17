@@ -123,6 +123,11 @@ class StaticSig(BaseSig):
         hash_size = STATIC_HASH_SIZES.get(self.hash_type, 0)
         base_size = 18 + hash_size
         self.file_hash = self.sig_data[18:base_size] if hash_size else b""
+        self.decode_warnings = []
+        if not hash_size:
+            self.decode_warnings.append("Unknown STATIC hash algorithm")
+        elif len(self.file_hash) < hash_size:
+            self.decode_warnings.append("Truncated STATIC file hash")
 
         # Extended form: one-byte length followed by the name/tag (no NUL).
         self.record_name = None
@@ -131,6 +136,8 @@ class StaticSig(BaseSig):
             name_length = self.sig_data[base_size]
             self.record_name_raw = self.sig_data[base_size + 1:base_size + 1 + name_length]
             self.record_name = self.record_name_raw.decode("utf-8", "replace")
+            if len(self.record_name_raw) < name_length:
+                self.decode_warnings.append("Truncated STATIC record name")
 
         # Convenience typed accessors.
         self.md5 = self.file_hash if self.hash_type == "md5" else None
@@ -146,6 +153,27 @@ class StaticSig(BaseSig):
             if self.hash_type == "crc32" and len(self.file_hash) == 4
             else None
         )
+
+    def to_details(self) -> dict:
+        return {
+            "decode_warnings": list(self.decode_warnings),
+            "partial_crc1": self.partial_crc1,
+            "partial_crc2": self.partial_crc2,
+            "partial_crc3": self.partial_crc3,
+            "file_size": self.file_size,
+            "flags": self.flags,
+            "hash_type": self.hash_type,
+            "file_hash_hex": self.file_hash.hex(),
+            "prefix_match": self.prefix_match,
+            "record_name": self.record_name,
+            "hash_algo_label": self.hash_algo_label,
+            "match_mode_label": self.match_mode_label,
+            "match_mode_note": self.match_mode_note,
+            "flags_text": self.flags_text,
+            "unknown_flag_bits": self.unknown_flag_bits,
+            "flag_summary": self.flag_summary,
+            "flag_bits_text": self.flag_bits_text,
+        }
 
     @property
     def hash_algo_label(self) -> str:

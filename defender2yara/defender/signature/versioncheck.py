@@ -241,6 +241,16 @@ class VersionCheckSig(BaseSig):
         self.check_id, self.value = struct.unpack_from("<II", self.sig_data, 0)
         self.extra = bytes(self.sig_data[8:])
 
+    def to_details(self) -> dict:
+        check = self.check
+        return {
+            "check_id": self.check_id,
+            "value": self.value,
+            "check": list(check) if check is not None else None,
+            "is_unconditional": self.is_unconditional,
+            "description": self.describe(),
+        }
+
     @property
     def check(self) -> Optional[Tuple[str, str]]:
         """(target, relation) for this check id, if it was decoded."""

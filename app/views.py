@@ -1,125 +1,103 @@
-from flask import Flask, Blueprint, current_app, request, redirect, url_for, render_template, send_file, make_response, session, jsonify
-from werkzeug.utils import secure_filename
-import os
-import logging
 from collections import Counter
-from typing import List, Tuple
-from defender2yara.defender.dbthreat import db, DbThreat, DbMetadata
-from defender2yara.threat_api import get_threat_details, search_threats
-from peewee import DoesNotExist
-import urllib.parse
-import pickle
-from defender2yara.util.utils import hexdump_s
+from io import BytesIO
+
+from flask import Blueprint, abort, current_app, jsonify, redirect, render_template, request, send_file, url_for
+from sqlalchemy import select
+
+from defender2yara.defender.dbthreat import DEFAULT_DATABASE, ImportInfo, read_session
+from defender2yara.threat_api import (
+    RawUnavailableError, get_raw_record, get_signature_details, get_threat_details,
+    search_threats,
+)
 
 views = Blueprint('views', __name__)
-logger = logging.getLogger("Views")
 
 
-@views.route("/")
+def database():
+    return current_app.config.get('DATABASE', DEFAULT_DATABASE)
+
+
+@views.route('/')
 def index():
-    metadata = None
+    with read_session(database()) as session:
+        metadata = session.scalar(select(ImportInfo).where(ImportInfo.id == 1))
+        return render_template('index.html', metadata=metadata)
+
+
+@views.route('/threat/<int:local_id>')
+def get_threat(local_id):
     try:
-        metadata = DbMetadata.get()
-    except Exception as e:
-        logger.warning(f"Could not retrieve metadata: {e}")
-
-    return render_template('index.html', metadata=metadata)
-
-
-@views.route("/threat")
-def get_threat():
-    threat_name = request.args.get('name', '').strip()
-    if not threat_name:
-        return redirect(url_for('views.index'))
-
-    print("Showing threat:", threat_name, flush=True)
-    dbThreat = DbThreat.get(DbThreat.name == threat_name)
-    threat = pickle.loads(dbThreat.threatObject)
-
-    decoded_signatures = (
-        threat.dexhstr_signatures + threat.aggregator_signatures
-        + threat.version_checks + threat.behavior_signatures
-        + threat.nid_signatures + threat.snid_signatures
-        + threat.pehstr_signatures
-        + threat.static_signatures
-    )
-    decoded_records = {(sig.sig_type, sig.sig_data) for sig in decoded_signatures}
-    skip_signatures = {
-        "SIGNATURE_TYPE_PEHSTR",
-        "SIGNATURE_TYPE_THREAT_BEGIN",
-        "SIGNATURE_TYPE_THREAT_END",
-        "SIGNATURE_TYPE_LUASTANDALONE",
-        "SIGNATURE_TYPE_REVOKED_CERTIFICATE",
-    }
-
-    sigs = []
-    for sig in threat.signatures:
-        if sig.sig_type in skip_signatures or (sig.sig_type, sig.sig_data) in decoded_records:
-            continue
-
-        s = ""
-        s += "{} {} {}\n".format(sig.sig_type_id, sig.sig_type, sig.size)
-        s += hexdump_s(sig.sig_data)
-        sigs.append(s)
-
-    signature_counts = Counter(sig.sig_type for sig in threat.signatures)
+        threat = get_threat_details(local_id, database=database())
+    except LookupError:
+        abort(404)
+    groups = {}
+    for signature in threat['signatures']:
+        kind = signature['type'].removeprefix('SIGNATURE_TYPE_')
+        groups.setdefault(kind, []).append(signature)
     return render_template(
-        'threat.html',
-        threat=threat,
-        signatures=sigs,
-        signature_counts=sorted(signature_counts.items()),
+        'threat.html', threat=threat, groups=groups,
+        signature_counts=sorted(Counter(sig['type'] for sig in threat['signatures']).items()),
     )
 
 
-@views.route("/search")
+@views.route('/search')
 def search_threat():
-    threat_name = request.args.get('threat_name', '').strip()
-    if not threat_name:
+    query = request.args.get('threat_name', '').strip()
+    if not query:
         return redirect(url_for('views.index'))
-
-    print("Searching for threat:", threat_name)
-    dbThreats = DbThreat.select().where(DbThreat.name.contains(threat_name))
-    print("Found", len(dbThreats), "threats in the database.", flush=True)
-
-    return render_template('threats.html', threats=dbThreats, threat_name=threat_name)
+    return render_template('threats.html', threats=search_threats(query, database=database()), threat_name=query)
 
 
-@views.route("/api/threats")
+@views.route('/api/threats')
 def api_search_threats():
-    threat_name = request.args.get('threat_name', '').strip()
-    if not threat_name:
-        return jsonify({"error": "Query parameter 'threat_name' is required."}), 400
+    query = request.args.get('threat_name', '').strip()
+    if not query:
+        return jsonify({'error': "Query parameter 'threat_name' is required."}), 400
+    return jsonify(search_threats(query, database=database()))
 
-    return jsonify(search_threats(threat_name))
 
-
-@views.route("/api/threat")
-def api_get_threat():
-    threat_name = request.args.get('name', '').strip()
-    if not threat_name:
-        return jsonify({"error": "Query parameter 'name' is required."}), 400
-
+@views.route('/api/threats/<int:local_id>')
+def api_get_threat(local_id):
     try:
-        return jsonify(get_threat_details(threat_name))
-    except DoesNotExist:
-        return jsonify({"error": "Threat not found."}), 404
+        return jsonify(get_threat_details(local_id, database=database()))
+    except LookupError:
+        return jsonify({'error': 'Threat not found.'}), 404
 
 
-@views.app_template_filter('urlencode')
-def urlencode_filter(s):
-    if isinstance(s, str):
-        return urllib.parse.quote_plus(s)
-    return s
+@views.route('/api/signatures/<int:local_id>')
+def api_get_signature(local_id):
+    try:
+        return jsonify(get_signature_details(local_id, database=database()))
+    except LookupError:
+        return jsonify({'error': 'Signature not found.'}), 404
 
-@views.app_template_filter('hexencode')
-def hexencode_filter(s):
-    if isinstance(s, str):
-        return hexdump_s(s)
-    return s
 
-@views.app_template_filter('bytes_to_str')
-def bytes_to_str(s: bytes) -> str:
-    if isinstance(s, bytes):
-        return s.decode('utf-8', errors='replace')
-    return str(s)
+@views.route('/api/signatures/<int:local_id>/raw')
+def api_get_raw_record(local_id):
+    try:
+        raw = get_raw_record(local_id, database=database())
+    except RawUnavailableError:
+        return jsonify({'error': 'Raw record unavailable; rebuild with --convert --include-raw.'}), 409
+    except LookupError:
+        return jsonify({'error': 'Signature not found.'}), 404
+    return send_file(BytesIO(raw), mimetype='application/octet-stream', as_attachment=True,
+                     download_name=f'signature-{local_id}.tlv')
+
+
+@views.app_template_filter('hexnum')
+def hexnum(value, width=0):
+    return f'0x{value:0{width}x}' if isinstance(value, int) else str(value or '')
+
+
+@views.app_template_filter('hexalgo')
+def hexalgo(value):
+    return f'0x{int(value) & 0x7000:04x}' if isinstance(value, int) else ''
+
+
+@views.app_template_filter('hextext')
+def hextext(value):
+    try:
+        return bytes.fromhex(value).decode('utf-8', errors='replace')
+    except (TypeError, ValueError):
+        return ''
 

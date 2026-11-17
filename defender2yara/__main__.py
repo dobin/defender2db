@@ -24,6 +24,8 @@ def run():
     parser.add_argument('-d','--download',action='store_true' ,required=False,default=False,help="download the latest signature database")
     parser.add_argument('-c', '--convert', action='store_true', required=False, default=False, help="convert downloaded signatures to DB format")
     parser.add_argument('-a', '--asr', action='store_true', required=False, default=False, help="Extract ASR rules from VDM")
+    parser.add_argument('--include-raw', action='store_true', help='retain exact records for research (default: decoded data only)')
+    parser.add_argument('--db', default='cache/threats.db', help='output SQLite database path')
 
     parser.add_argument('--header_check',action='store_true',default=False,help="add file header check to generated YARA rules")
     parser.add_argument('--filesize_check',required=False,type=str,default="20MB",help="add filesize check to generated YARA rules")

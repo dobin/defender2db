@@ -24,6 +24,16 @@ HSTR_EXT_SIGS = [
 
 
 class HStrSig(BaseSig):
+    def to_details(self) -> dict:
+        return {
+            "unknown_u16_1": self.unknown_u16_1,
+            "threshold": self.threshold,
+            "rule_numbers": self.rule_numbers,
+            "unknown_u8_1": self.unknown_u8_1,
+            "decode_warnings": list(self.decode_warnings),
+            "subrules": [rule.to_details() for rule in self.subrules],
+        }
+
     def __init__(self,data:bytes,ptr:int=0) -> None:
         # parse common header
         self.parse_common_header(data,ptr)
@@ -36,6 +46,7 @@ class HStrSig(BaseSig):
         self.unknown_u8_1 = self.sig_data[6]
 
         # parse subrules
+        self.decode_warnings = []
         self.subrules = []
         pos = 7
         while pos < len(self.sig_data):
@@ -45,6 +56,10 @@ class HStrSig(BaseSig):
                 break
             self.subrules.append(subrule)
             pos += 3 + subrule.rule_size
+            if pos > len(self.sig_data):
+                self.decode_warnings.append("Truncated HSTR subrule pattern")
+        if self.rule_numbers and len(self.subrules) < self.rule_numbers:
+            self.decode_warnings.append("Fewer HSTR subrules than declared")
 
 
 class HStrExtSig(BaseSig):
@@ -94,10 +109,12 @@ class HStrExtSig(BaseSig):
         self.rule_numbers = struct.unpack('<H',self.sig_data[4:6])[0]
         self.unknown_u8_1 = self.sig_data[6]
 
+        self.decode_warnings = []
         # byte 6 starts an optional NUL-terminated name
         name_end = self.sig_data.find(b"\x00", 6)
         if name_end < 0:
             # Malformed / legacy: keep the old "reserved byte" assumption.
+            self.decode_warnings.append("Unterminated HSTR_EXT name; used legacy layout")
             self.name_raw = b""
             self.name = ""
             rules_pos = 7
@@ -110,8 +127,13 @@ class HStrExtSig(BaseSig):
         self.subrules = []
         if self.rule_numbers:
             self.subrules_end = self._parse_counted_subrules(rules_pos)
+            if len(self.subrules) < self.rule_numbers:
+                self.decode_warnings.append("Fewer HSTR_EXT subrules than declared")
         else:
             self.subrules_end = self._parse_terminated_subrules(rules_pos)
+
+        if self.subrules_end > len(self.sig_data):
+            self.decode_warnings.append("Truncated HSTR_EXT subrule pattern")
 
         # trailing data: u16 end marker and optional u16 flags word.  Some
         # record kinds use the whole trailing word as flags and have no
@@ -132,6 +154,21 @@ class HStrExtSig(BaseSig):
                 self.flags_present = True
             else:
                 self.end_marker = first
+
+    def to_details(self) -> dict:
+        return {
+            "unknown_u16_1": self.unknown_u16_1,
+            "threshold": self.threshold,
+            "rule_numbers": self.rule_numbers,
+            "unknown_u8_1": self.unknown_u8_1,
+            "name": self.name,
+            "name_present": self.name_present,
+            "decode_warnings": list(self.decode_warnings),
+            "end_marker": self.end_marker,
+            "flags": self.flags,
+            "flags_present": self.flags_present,
+            "subrules": [rule.to_details() for rule in self.subrules],
+        }
 
     @property
     def name_present(self) -> bool:
@@ -196,6 +233,14 @@ class DexHStrExtSig(HStrExtSig):
       They are exposed as :attr:`name_reference` (without the leading ``!``)
       and :attr:`is_name_reference`.
     """
+
+    def to_details(self) -> dict:
+        details = super().to_details()
+        details.update({
+            "is_name_reference": self.is_name_reference,
+            "name_reference": self.name_reference,
+        })
+        return details
 
     def __init__(self, data: bytes, ptr: int = 0) -> None:
         super().__init__(data, ptr)

@@ -4,8 +4,10 @@ import sys
 import shutil
 import yara
 from collections import defaultdict
-from peewee import Model, CharField, SqliteDatabase, BlobField, IntegerField
-from defender2yara.defender.dbthreat import NiceThreat, DbThreat, DbMetadata, db
+from contextlib import nullcontext
+from defender2yara.defender.dbthreat import DEFAULT_DATABASE
+from defender2yara.database_build import build_database
+from defender2yara.conversion import store_source
 from packaging.version import Version
 
 from defender2yara.defender.threat import Threat
@@ -16,10 +18,8 @@ from defender2yara.defender.luaparse import fixup_lua_data, lua_decompile, lua_d
 from defender2yara.defender.lua_backend import load_lua_backend
 from defender2yara.defender.signature import *
 from defender2yara.util.utils import hexdump
-import pickle
 from tqdm import tqdm
 import logging
-from datetime import datetime
 
 logger = logging.getLogger(__package__)
 
@@ -319,67 +319,27 @@ def parse_threats_by_name(vdm:Vdm, search: str):
                     hexdump(sig.sig_data)
 
 
-# convert
-def convert_threats(vdm:Vdm):
-    logger.info("Writing threats to database: {}".format(db.database))
-    logger.info("Sit back and relax")
-    threats = vdm.get_threats()
-
-    progress_bar = tqdm(
-        total=len(threats),
-        unit='threat',
-        bar_format='{l_bar}{bar:20}{r_bar}',
-        colour='green',
-        desc="Converting signatures",
-        leave=True)
-    progress_bar.refresh()
-
-    # Fail once with setup instructions instead of silently omitting all Lua.
-    load_lua_backend()
-
-    # Batch processing for faster inserts
-    batch_size = 1000
-    batch = []
-    
-    with db.atomic():  # Single transaction for all inserts
-        for threat in threats:
-            name = threat.threat_name
-
-            sig_unique = set()
-            for sig in threat.signatures:
-                sig_unique.add(sig.sig_type)
-            sigs = " ".join(sig_unique)
-
-            niceThreat = NiceThreat(threat)
-            niceThreat.lua_scripts = get_lua_from_threat(threat)
-            niceThreat.yara_rules = get_yara_from_threat(threat)
-
-            threatObj = pickle.dumps(niceThreat)
-            
-            batch.append({
-                'name': name,
-                'sigs': sigs,
-                'sigcount': len(threat.signatures),
-                'threatObject': threatObj
-            })
-            #logger.info(f"Converted threat: {name} with {len(threat.signatures)} signatures.")
-
-            if len(batch) >= batch_size:
-                DbThreat.insert_many(batch).execute()
-                batch = []
-
-            progress_bar.update(1)
-
-        # Insert remaining items
-        if batch:
-            DbThreat.insert_many(batch).execute()
-
-    progress_bar.close()
-    db.close()
+def generate_output(threat):
+    lua_diagnostics, yara_diagnostics = [], []
+    lua = get_lua_from_threat(threat, lua_diagnostics)
+    yara_rules = get_yara_from_threat(threat, yara_diagnostics)
+    has_lua = any(sig.sig_type == 'SIGNATURE_TYPE_LUASTANDALONE' for sig in threat.signatures)
+    return {
+        'lua': {'status': ('partial' if lua_diagnostics else 'generated') if lua else ('error' if has_lua else 'not_applicable'),
+                'items': [item.decode('utf-8', errors='replace') if isinstance(item, bytes) else item for item in lua],
+                'diagnostics': lua_diagnostics},
+        'yara': {'status': ('partial' if yara_diagnostics else 'generated') if yara_rules else ('error' if yara_diagnostics else 'not_applicable'),
+                 'items': yara_rules, 'diagnostics': yara_diagnostics},
+    }
 
 
-def get_lua_from_threat(threat:Threat) -> List[bytes]:
+def convert_threats(vdm, connection, include_raw=False):
+    store_source(connection, vdm, include_raw=include_raw, generate=generate_output)
+
+
+def get_lua_from_threat(threat:Threat, diagnostics=None) -> List[bytes]:
     lua_scripts = []
+    diagnostics = diagnostics if diagnostics is not None else []
     for signature_index, sig in enumerate(threat.signatures):
         if sig.sig_type == "SIGNATURE_TYPE_LUASTANDALONE":
             offset = getattr(sig, "offset", None)
@@ -393,11 +353,13 @@ def get_lua_from_threat(threat:Threat) -> List[bytes]:
             lua_header_offset = sig.sig_data.find(b'\x1bLuaQ')
             if lua_header_offset < 0:
                 logger.warning("No Lua header: %s", context)
+                diagnostics.append({'offset': offset, 'status': 'error', 'message': 'No Lua header'})
                 continue
             lua_data = sig.sig_data[lua_header_offset:]
             lua_decompiled = lua_decompile_data(lua_data)
             if lua_decompiled is None or b'DECOMPILER ERROR' in lua_decompiled:
                 logger.warning("Lua decompilation incomplete: %s lua_header_offset=%d; trying disassembly", context, lua_header_offset)
+                diagnostics.append({'offset': offset, 'status': 'disassembly_fallback', 'message': 'Decompilation incomplete'})
                 listing = lua_decompile_data(lua_data, disassemble=True)
                 if listing is not None:
                     lua_decompiled = (lua_decompiled or b'') + b'\n-- Decompilation incomplete; bytecode disassembly follows.\n' + listing
@@ -409,18 +371,22 @@ def get_lua_from_threat(threat:Threat) -> List[bytes]:
     return lua_scripts
 
 
-def get_yara_from_threat(threat:Threat) -> List[str]:
+def get_yara_from_threat(threat:Threat, diagnostics=None) -> List[str]:
     result = []
+    diagnostics = diagnostics if diagnostics is not None else []
 
     yara_rules = YaraRule(threat,filesize_check="20MB",do_header_check=False)
+    if len(yara_rules.rules) < len(threat.hstr_signatures):
+        diagnostics.append({'status': 'omitted', 'message': 'Some string signatures could not produce a complete YARA rule'})
     if not yara_rules:
         return result
-    
+
     for yara_rule in yara_rules.generate_rules():
         try:
             yara.compile(source=yara_rule)
         except yara.SyntaxError as e:
-            logger.warn(f"Failed to convert {threat.threat_name} to yara: {str(e)}")
+            logger.warning(f"Failed to convert {threat.threat_name} to yara: {str(e)}")
+            diagnostics.append({'status': 'error', 'message': str(e)})
             logger.debug("\n"+yara_rule)
             continue
         result.append(yara_rule)
@@ -528,72 +494,60 @@ def main(args):
             logger.error("No signature version found. Please download the latest signature database with --download option.")
             sys.exit(1)
 
-    # Recreate the database for every conversion, including the first run.
-    if os.path.exists(db.database):
-        logger.warning("Database already exists - deleting and recreating it.")
-        if not db.is_closed():
-            db.close()
-        os.remove(db.database)
+    context = build_database(
+        getattr(args, 'db', DEFAULT_DATABASE), signature_version=signature_version,
+        engine_version=engine_version, include_raw=getattr(args, 'include_raw', False),
+    ) if args.convert else nullcontext(None)
 
-    db.connect(reuse_if_open=True)
-    db.create_tables([DbThreat, DbMetadata])
+    with context as connection:
+        # iterate through mpav and mpas - each can take a lot of memory
+        for name in ["mpav","mpas"]:
+            vdm: Vdm = None
 
-    # Update or create metadata entry
-    metadata = DbMetadata.create(
-        signature_version=signature_version,
-        engine_version=engine_version,
-        conversion_datetime=datetime.now()
-    )
-    metadata.save()
+            major_version = ".".join(signature_version.split(".")[0:2])
+            minor_version = ".".join(signature_version.split(".")[2:4])
+            vdm_base_path = os.path.join(cache_dir,"vdm",major_version,'0.0')
+            vdm_delta_path = os.path.join(cache_dir,"vdm",major_version,minor_version)
+            base_file = os.path.join(vdm_base_path,name+"base.vdm")
+            delta_file = os.path.join(vdm_delta_path,name+"dlta.vdm")
 
-    # iterate through mpav and mpas - each can take a lot of memory
-    for name in ["mpav","mpas"]:
-        vdm: Vdm = None
+            logger.info(f"Loading base signature file: {base_file}")
+            logger.info(f"Creating vdm from files: {vdm_base_path}")
+            vdm = Vdm(base_file)
+            if os.path.exists(delta_file):
+                logger.info(f"Applying delta patch: {delta_file}")
+                vdm.apply_delta_vdm(delta_file)
+            # Parse the patched data, not the stale base-only signatures.
+            vdm.parse_files()
 
-        major_version = ".".join(signature_version.split(".")[0:2])
-        minor_version = ".".join(signature_version.split(".")[2:4])
-        vdm_base_path = os.path.join(cache_dir,"vdm",major_version,'0.0')
-        vdm_delta_path = os.path.join(cache_dir,"vdm",major_version,minor_version)
-        base_file = os.path.join(vdm_base_path,name+"base.vdm")
-        delta_file = os.path.join(vdm_delta_path,name+"dlta.vdm")
+            #logger.info(f"VDM Target signature version: {vdm.version}")
+            #logger.info(f"VDM Target signature type   : {vdm.vdm_type}")
 
-        logger.info(f"Loading base signature file: {base_file}")
-        logger.info(f"Creating vdm from files: {vdm_base_path}")
-        vdm = Vdm(base_file)
-        if os.path.exists(delta_file):
-            logger.info(f"Applying delta patch: {delta_file}")
-            vdm.apply_delta_vdm(delta_file)
-        # Parse the patched data, not the stale base-only signatures.
-        vdm.parse_files()
+            if args.convert:
+                # convert threats to database
+                convert_threats(vdm, connection, getattr(args, 'include_raw', False))
+            elif args.asr:
+                # extract ASR entries
+                parse_asr(vdm)
+            else:
+                # extract ASR entries - around 24
+                #parse_asr(vdm)
 
-        #logger.info(f"VDM Target signature version: {vdm.version}")
-        #logger.info(f"VDM Target signature type   : {vdm.vdm_type}")
+                # extract all threats with LUA
+                #parse_threat_lua(vdm)
 
-        if args.convert:
-            # convert threats to database
-            convert_threats(vdm)
-        elif args.asr:
-            # extract ASR entries
-            parse_asr(vdm)
-        else:
-            # extract ASR entries - around 24
-            #parse_asr(vdm)
+                # extract all LUA - around 50k, including ASR
+                #parse_sig_lua(vdm, name)
 
-            # extract all threats with LUA
-            #parse_threat_lua(vdm)
+                # extract all threats
+                #parse_threats(vdm, search="Bearfoos.A!ml")
 
-            # extract all LUA - around 50k, including ASR
-            #parse_sig_lua(vdm, name)
+                # find a threat
+                #find = "Bearfoos.A"
+                #logger.info(f"Searching for threats with name: {find}")
+                #parse_threats(vdm, search=find)
 
-            # extract all threats
-            #parse_threats(vdm, search="Bearfoos.A!ml")
-
-            # find a threat
-            #find = "Bearfoos.A"
-            #logger.info(f"Searching for threats with name: {find}")
-            #parse_threats(vdm, search=find)
-
-            pass
+                pass
 
     logger.info("Complete")
     sys.exit(0)

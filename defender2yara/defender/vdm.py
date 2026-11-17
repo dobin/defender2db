@@ -109,62 +109,71 @@ class Vdm:
                 postfix="0.00 MB/s",
                 leave=False)
 
+        next_progress = 1_000_000
         # parse
         while ptr < len(data):
             if ptr + 4 > len(data):
                 raise ValueError(f"Truncated signature header at offset {ptr}")
-            sig_type = SIG_TYPES[data[ptr]]
-            
-            if sig_type == "SIGNATURE_TYPE_THREAT_BEGIN":
-                entry = ThreatBeginSig(data,ptr)
-            elif sig_type == "SIGNATURE_TYPE_THREAT_END":
-                entry = ThreatEndSig(data,ptr)
-            elif sig_type == "SIGNATURE_TYPE_PEHSTR":
-                entry = HStrSig(data,ptr)
-            elif sig_type == "SIGNATURE_TYPE_DEXHSTR_EXT":
-                entry = DexHStrExtSig(data,ptr)
-            elif sig_type in HSTR_EXT_SIGS:
-                entry = HStrExtSig(data,ptr)
-            elif sig_type == "SIGNATURE_TYPE_LUASTANDALONE":
-                entry = LuaSig(data,ptr)
-            elif sig_type == "SIGNATURE_TYPE_STATIC":
-                entry = StaticSig(data,ptr)
-            elif sig_type == "SIGNATURE_TYPE_KCRCE":
-                entry = KcrceSig(data,ptr)
-            elif sig_type == "SIGNATURE_TYPE_SNID":
-                entry = SnidSig(data,ptr)
-            elif sig_type == "SIGNATURE_TYPE_NID":
-                entry = NidSig(data,ptr)
-            elif sig_type == "SIGNATURE_TYPE_NID64":
-                entry = Nid64Sig(data,ptr)
-            elif sig_type in SIGTREE_SIGS:
-                entry = SigTreeSig(data,ptr)
-            elif sig_type == "SIGNATURE_TYPE_AAGGREGATOREX":
-                entry = AaAggregatorExSig(data,ptr)
-            elif sig_type == "SIGNATURE_TYPE_VERSIONCHECK":
-                entry = VersionCheckSig(data,ptr)
-            else:
-                entry = BaseSig(data,ptr)
-            # check if the sig_data has valid data size
-            if len(entry.sig_data) > 0:
-                database.append(entry)
+            try:
+                entry = Vdm.decode_record(data, ptr)
+            except (ValueError, AssertionError, IndexError, struct.error, UnicodeError) as error:
+                # Validate framing on the failure path, not twice for every record.
+                framed = BaseSig(data, ptr)
+                if framed.sig_type in ('SIGNATURE_TYPE_THREAT_BEGIN', 'SIGNATURE_TYPE_THREAT_END'):
+                    raise ValueError(f'Invalid threat boundary at offset {ptr}: {error}') from error
+                entry = framed
+                entry.decode_error = str(error)
+            database.append(entry)
             counter[entry.sig_type] += 1
             ptr += entry.record_size
-            elapsed = time.perf_counter() - start_time
-            throughput_mb_s = ptr / elapsed / 1_000_000 if elapsed else 0
             progress_bar.update(entry.record_size)
-            progress_bar.set_postfix_str(f"{throughput_mb_s:.2f} MB/s")
+            if ptr >= next_progress:
+                next_progress = ptr + 1_000_000
+                elapsed = time.perf_counter() - start_time
+                throughput_mb_s = ptr / elapsed / 1_000_000 if elapsed else 0
+                progress_bar.set_postfix_str(f"{throughput_mb_s:.2f} MB/s", refresh=False)
 
         progress_bar.close()
         elapsed = time.perf_counter() - start_time
-        throughput_mb_s = len(data) / elapsed / 1_000_000 if elapsed else 0
-        logger.info(
-            "Parsed %.2f MB in %.2f seconds (%.2f MB/s)",
-            len(data) / 1_000_000,
-            elapsed,
-            throughput_mb_s,
-        )
+        logger.info('Parsed %.2f MB in %.2f seconds (%.2f MB/s)',
+                    len(data) / 1_000_000, elapsed,
+                    len(data) / elapsed / 1_000_000 if elapsed else 0)
         return database
+
+    @staticmethod
+    def decode_record(data: bytes, ptr: int = 0) -> BaseSig:
+        sig_type = SIG_TYPES[data[ptr]]
+        if sig_type == "SIGNATURE_TYPE_THREAT_BEGIN":
+            entry = ThreatBeginSig(data,ptr)
+        elif sig_type == "SIGNATURE_TYPE_THREAT_END":
+            entry = ThreatEndSig(data,ptr)
+        elif sig_type == "SIGNATURE_TYPE_PEHSTR":
+            entry = HStrSig(data,ptr)
+        elif sig_type == "SIGNATURE_TYPE_DEXHSTR_EXT":
+            entry = DexHStrExtSig(data,ptr)
+        elif sig_type in HSTR_EXT_SIGS:
+            entry = HStrExtSig(data,ptr)
+        elif sig_type == "SIGNATURE_TYPE_LUASTANDALONE":
+            entry = LuaSig(data,ptr)
+        elif sig_type == "SIGNATURE_TYPE_STATIC":
+            entry = StaticSig(data,ptr)
+        elif sig_type == "SIGNATURE_TYPE_KCRCE":
+            entry = KcrceSig(data,ptr)
+        elif sig_type == "SIGNATURE_TYPE_SNID":
+            entry = SnidSig(data,ptr)
+        elif sig_type == "SIGNATURE_TYPE_NID":
+            entry = NidSig(data,ptr)
+        elif sig_type == "SIGNATURE_TYPE_NID64":
+            entry = Nid64Sig(data,ptr)
+        elif sig_type in SIGTREE_SIGS:
+            entry = SigTreeSig(data,ptr)
+        elif sig_type == "SIGNATURE_TYPE_AAGGREGATOREX":
+            entry = AaAggregatorExSig(data,ptr)
+        elif sig_type == "SIGNATURE_TYPE_VERSIONCHECK":
+            entry = VersionCheckSig(data,ptr)
+        else:
+            entry = BaseSig(data,ptr)
+        return entry
 
     @staticmethod
     def parse_threats(database:List[BaseSig]) -> List[Threat]:
@@ -189,6 +198,7 @@ class Vdm:
                 continue
             elif sig.sig_type == "SIGNATURE_TYPE_THREAT_END":
                 if threat is not None:
+                    threat.threat_end_sig = sig
                     threats.append(threat)
                 else:
                     logger.warning("Orphan threat END")

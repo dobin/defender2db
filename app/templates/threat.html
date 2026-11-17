@@ -1,340 +1,150 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html>
-  <head>
-    {% include 'header.html' %}
-  </head>
+  <head>{% include 'header.html' %}</head>
   <body>
     {% include 'navigation.html' %}
-
     <div class="indent">
-
-    <header class="threat-overview">
-      <h1 class="threat-title">{{ threat.name }}</h1>
-      <div class="threat-overview-grid">
+      <header class="threat-overview">
+        <div class="threat-heading">
+          <h1 class="threat-title">{{ threat.name }}</h1>
+          <span class="badge text-bg-{% if threat.severity == 'Critical' %}danger{% elif threat.severity == 'High' %}warning{% else %}secondary{% endif %}">{{ threat.severity }}</span>
+        </div>
         <div class="threat-facts">
-          <span><strong>ID</strong> {{ threat.id }}</span>
-          <span><strong>Category</strong> {{ threat.category }}</span>
-          <span><strong>Severity</strong> <span class="badge severity-badge {% if threat.severity == 'Critical' %}severity-critical{% elif threat.severity == 'High' %}severity-high{% else %}severity-default{% endif %}">{{ threat.severity }}</span></span>
-          {% if threat.type %}<span><strong>Type</strong> {{ threat.type }}</span>{% endif %}
-          {% if threat.platform %}<span><strong>Platform</strong> {{ threat.platform }}</span>{% endif %}
-          {% if threat.family %}<span><strong>Family</strong> {{ threat.family }}</span>{% endif %}
-          {% if threat.variant %}<span><strong>Variant</strong> {{ threat.variant }}</span>{% endif %}
+          <span><strong>Local ID</strong> {{ threat.id }}</span>
+          <span><strong>Defender ID</strong> {{ threat.defender_id }}</span>
+          <span><strong>Source</strong> {{ threat.source_id }}</span>
+          <span><strong>Category</strong> {{ threat.category_id }}</span>
+          {% for field in ['type', 'platform', 'family', 'variant'] %}
+          {% if threat[field] %}<span><strong>{{ field|capitalize }}</strong> {{ threat[field] }}</span>{% endif %}
+          {% endfor %}
           {% if threat.suffixes %}<span><strong>Suffixes</strong> {{ threat.suffixes|join(', ') }}</span>{% endif %}
         </div>
-        <div class="threat-signature-summary">
-          <details>
-            <summary>Signature counts <span class="badge text-bg-secondary">{{ threat.signatures|length }}</span></summary>
-            {% if signature_counts %}
-            <ul class="signature-counts">{% for sig_type, count in signature_counts %}
-              <li><code>{{ sig_type|replace('SIGNATURE_TYPE_', '') }}</code><span class="badge text-bg-light">{{ count }}</span></li>
-            {% endfor %}</ul>
-            {% else %}<p class="text-muted mb-0">No signatures.</p>{% endif %}
-          </details>
-          <span class="threat-generated-counts">YARA {{ threat.yara_rules|length }} · Lua {{ threat.lua_scripts|length }} · Revoked certs {{ threat.revoked_certs|length }}</span>
-        </div>
-      </div>
-    </header>
+        <details class="threat-signature-summary"><summary>Signature counts <span class="badge text-bg-secondary">{{ threat.signature_count }}</span></summary>
+          <ul class="signature-counts">{% for kind, count in signature_counts %}<li><code>{{ kind|replace('SIGNATURE_TYPE_', '') }}</code><span>{{ count }}</span></li>{% endfor %}</ul>
+        </details>
+      </header>
 
-    {% if threat.static_signatures %}
-    <section class="threat-section">
-      <h2>Static file signatures <span class="badge text-bg-secondary">{{ threat.static_signatures|length }}</span></h2>
-      <p class="sig-intro">
-        A static signature is a <strong>known-file fingerprint</strong>: a file size plus
-        three partial CRC32 windows and one strong file hash. A <strong>prefix match</strong>
-        only fingerprints the first <em>N</em> bytes and accepts any file that is at least
-        that large; an <strong>exact size</strong> record requires the file length to match
-        exactly. <a href="/static/sigs/SIG_STATIC.md" target="_blank" rel="noopener">What do these values mean?</a>
-      </p>
-      <details class="static-signature-help">
-        <summary>How to read flags and window values</summary>
-        <ul>
-          <li><strong>File size</strong> — <em>N</em>, the number of bytes covered by the fingerprint.</li>
-          <li><strong>Prefix match / Exact size</strong> — whether the actual file may be larger than <em>N</em>.</li>
-          <li><strong>Partial CRC 1</strong> — CRC32 of the first 4 KiB (zero-padded for short files).</li>
-          <li><strong>Partial CRC 2</strong> — CRC32 of the first <em>min(N, 64 KiB)</em> bytes.</li>
-          <li><strong>Partial CRC 3</strong> — CRC32 of the last 4 KiB of the <em>N</em>-byte prefix.</li>
-          <li><strong>Flags</strong> — bit <code>0x0001</code> is the prefix-match bit; bits 12–14 select the strong hash:
-            <code>0x0000</code> MD5, <code>0x1000</code> SHA-1, <code>0x2000</code> CRC32,
-            <code>0x3000</code> SHA-1 (first 4 bytes), <code>0x4000</code> SHA-256.</li>
-        </ul>
-        <p class="mb-0">Examples: <code>0x2000</code> = CRC32 with exact size; <code>0x2001</code> = CRC32 with prefix match.</p>
-      </details>
-      {% for sig in threat.static_signatures %}
-      <article class="signature-card static-signature-card">
-        <div class="static-signature-heading">
-          <strong>{{ sig.record_name or 'Unnamed static signature' }}</strong>
-          <span class="badge text-bg-light">{{ sig.hash_algo_label }}</span>
-          <span class="badge text-bg-secondary">flags {{ sig.flags_text }}</span>
-        </div>
-        <table class="static-signature-table">
-          <thead>
-            <tr><th>Key</th><th>Value</th><th>Notes</th></tr>
-          </thead>
-          <tbody>
-            <tr>
-              <th scope="row">Flags</th>
-              <td><code>{{ sig.flags_text }}</code></td>
-              <td class="notes">
-                {{ sig.flag_bits_text }}
-                {% if sig.unknown_flag_bits %}<span class="badge text-bg-danger">Unknown flag bits</span>{% endif %}
-              </td>
-            </tr>
-            <tr>
-              <th scope="row">File size</th>
-              <td><code>{{ sig.file_size }}</code></td>
-              <td class="notes">
-                {{ ('file may be larger; only the first %d bytes are checked'|format(sig.file_size))
-                   if sig.prefix_match else
-                   ('file must be exactly %d bytes'|format(sig.file_size)) }}
-              </td>
-            </tr>
-            <tr>
-              <th scope="row">Strong hash</th>
-              <td><code>{{ sig.file_hash.hex() or 'Unavailable' }}</code></td>
-              <td class="notes">{{ sig.hash_algo_label }} over the first {{ sig.file_size }} bytes</td>
-            </tr>
-            <tr>
-              <th scope="row">Partial CRC 1</th>
-              <td><code>{{ '%08x'|format(sig.partial_crc1) }}</code></td>
-              <td class="notes">CRC32 of the first 4 KiB</td>
-            </tr>
-            <tr>
-              <th scope="row">Partial CRC 2</th>
-              <td><code>{{ '%08x'|format(sig.partial_crc2) }}</code></td>
-              <td class="notes">CRC32 of the first min(N, 64 KiB) bytes</td>
-            </tr>
-            <tr>
-              <th scope="row">Partial CRC 3</th>
-              <td><code>{{ '%08x'|format(sig.partial_crc3) }}</code></td>
-              <td class="notes">CRC32 of the last 4 KiB of the N-byte prefix</td>
-            </tr>
-          </tbody>
-        </table>
-      </article>
+      {% for language in ['yara', 'lua'] %}
+      {% set output = threat.generated.get(language, {}) %}
+      {% if output.get('status') not in ['not_applicable', 'unavailable'] and (output.get('items') or output.get('diagnostics')) %}
+      <section class="threat-section">
+        <h2>{{ language|upper }} output</h2>
+        {% if output.get('status') not in ['generated', 'ok'] %}<p>Generation status: {{ output.get('status') }}</p>{% endif %}
+        {% for text in output.get('items', []) %}<div class="script"><pre>{{ text }}</pre></div>{% endfor %}
+        {% if output.get('diagnostics') %}<details><summary>Generation diagnostics</summary><pre>{{ output.get('diagnostics')|tojson(indent=2) }}</pre></details>{% endif %}
+      </section>
+      {% endif %}
       {% endfor %}
-    </section>
-    {% endif %}
 
-    {% if threat.yara_rules %}
-    <h2> Yara Signatures</h2>
+      {% set titles = {
+        'STATIC': 'Static file signatures', 'PEHSTR': 'PE string signatures',
+        'PEHSTR_EXT': 'PE extended string signatures', 'DEXHSTR_EXT': 'DEX string signatures',
+        'AAGGREGATOR': 'Aggregator expressions', 'AAGGREGATOREX': 'Aggregator expressions (extended)',
+        'VERSIONCHECK': 'Version checks', 'SIGTREE': 'Behavior signature trees',
+        'SIGTREE_EXT': 'Behavior signature trees (extended)', 'SIGTREE_BM': 'Behavior signature trees (BM)',
+        'NID': 'NID records', 'NID64': 'NID64 records', 'SNID': 'SNID references',
+        'REVOKED_CERTIFICATE': 'Revoked certificates'
+      } %}
+      {% for kind, records in groups.items() %}
+      <section class="threat-section">
+        <h2>{{ titles.get(kind, kind) }} <span class="badge text-bg-secondary">{{ records|length }}</span></h2>
+        {% if kind in ['NID', 'NID64'] %}
+        <p class="nid-intro">A NID is a reference, not a detection: a numeric id into Defender's internal name/object table. It contains no byte pattern, hash or behaviour, so it cannot match a file on its own. <a href="/static/sigs/NID.md" target="_blank" rel="noopener">What is a NID?</a></p>
+        {% elif kind == 'SNID' %}
+        <p class="nid-intro">An SNID refers to a shared signature record rather than embedding its body. Some targets live outside the shipped VDM, and the key is not necessarily a payload hash. <a href="/static/sigs/SNID.md" target="_blank" rel="noopener">What is an SNID?</a></p>
+        {% elif kind == 'VERSIONCHECK' %}
+        <p>Environment gates apply to subsequent records in source order, not only to this display group.</p>
+        {% endif %}
+        {% for sig in records %}
+        {% set d = sig.details %}
+        <article class="signature-card" id="signature-{{ sig.id }}">
+          <h3>{{ sig.type }} · local ID {{ sig.id }}</h3>
+          <p>Source {{ sig.source_id|default(threat.source_id) }} · Offset {{ sig.offset|hexnum }} ·
+             Payload {{ sig.size }} bytes · Role {{ sig.role }} · Decode status <strong>{{ sig.decode_status }}</strong> ·
+             Details version {{ sig.details_version }}</p>
+          {% if sig.decode_status == 'unsupported' %}<p>No decoder is available for this record type.</p>{% endif %}
+          {% if sig.decode_status == 'error' %}<p>Decoding failed; see stored diagnostics below.</p>{% endif %}
+          {% if sig.decode_status == 'partial' %}<p>Partially decoded; unknown interpretation remains.</p>{% endif %}
 
-    {% for sig in threat.yara_rules %}
-        <div class="sig">
-            <pre>{{sig}}
-            </pre>
-        </div>
-    {% endfor %}
-
-    {% endif %}
-
-    {% if threat.lua_scripts %}
-    <h2> Lua Scripts</h2>
-
-    {% for script in threat.lua_scripts %}
-        <div class="script">
-            <pre>{{script|bytes_to_str}}
-            </pre>
-        </div>
-    {% endfor %}
-
-
-    {% endif %}
-
-    {% if threat.revoked_certs %}
-    <h2> Revoked Certificates </h2>
-
-    {% for cert in threat.revoked_certs %}
-        <div class="cert">
-            Thumbprint: {{cert}} <br>
-        </div>
-    {% endfor %}
-    <br>
-    {% endif %}
-
-
-    {% macro string_signatures(title, records) %}
-    {% if records %}
-    <section class="threat-section">
-      <h2>{{ title }} <span class="badge text-bg-secondary">{{ records|length }}</span></h2>
-      {% for sig in records %}
-      <details class="signature-card" {% if loop.first %}open{% endif %}>
-        <summary>{{ sig.sig_type }} · Threshold {{ sig.threshold }} · {{ sig.subrules|length }} patterns</summary>
-        {% if sig.name %}<p><strong>Name / reference:</strong> {{ sig.name }}</p>{% endif %}
-        <p>Flags: {{ '0x%04x'|format(sig.flags) }} · End marker: {{ sig.end_marker }}</p>
-        {% if sig.subrules %}
-        <div class="table-responsive">
-          <table class="table table-sm table-bordered signature-table">
+          {% if kind == 'STATIC' %}
+          <table class="static-signature-table">
+            <thead><tr><th>Key</th><th>Value</th><th>Notes</th></tr></thead>
+            <tbody>
+              <tr><th>Flags</th><td><code>{{ d.get('flags_text') or d.get('flags')|hexnum(4) }}</code></td><td class="notes">{{ d.get('flag_bits_text') or ('%s (%s) + %s'|format(d.get('hash_algo_label', d.get('hash_type', 'Unknown')), d.get('flags_text') or d.get('flags')|hexalgo, 'prefix match (0x0001)' if d.get('prefix_match') else 'exact size (0x0001 clear)')) }}</td></tr>
+              <tr><th>File size</th><td><code>{{ d.get('file_size', '') }}</code></td><td class="notes">{{ d.get('match_mode_note') or (('file may be larger; only the first %d bytes are checked'|format(d.get('file_size', 0))) if d.get('prefix_match') else ('file must be exactly %d bytes'|format(d.get('file_size', 0)))) }}</td></tr>
+              <tr><th>Strong hash</th><td><code>{{ d.get('file_hash_hex', '') or 'Unavailable' }}</code></td><td class="notes">{{ d.get('hash_algo_label', d.get('hash_type', '')) }} over the first {{ d.get('file_size', '') }} bytes</td></tr>
+              <tr><th>Partial CRC 1</th><td><code>{{ d.get('partial_crc1')|hexnum(8) }}</code></td><td class="notes">CRC32 of the first 4 KiB</td></tr>
+              <tr><th>Partial CRC 2</th><td><code>{{ d.get('partial_crc2')|hexnum(8) }}</code></td><td class="notes">CRC32 of the first min(N, 64 KiB) bytes</td></tr>
+              <tr><th>Partial CRC 3</th><td><code>{{ d.get('partial_crc3')|hexnum(8) }}</code></td><td class="notes">CRC32 of the last 4 KiB of the N-byte prefix</td></tr>
+            </tbody>
+          </table>
+          {% elif 'HSTR' in kind %}
+          <p>Name / reference: {{ d.get('name', '') }} · Threshold {{ d.get('threshold', '') }} ·
+             Flags {{ d.get('flags')|hexnum }} · End marker {{ d.get('end_marker', '') }}</p>
+          <table class="table table-sm table-bordered">
             <thead><tr><th>Weight</th><th>Flags</th><th>Pattern (hex)</th><th>Text (best effort)</th></tr></thead>
-            <tbody>{% for rule in sig.subrules %}
-              <tr><td>{{ rule.rule_weight }}</td><td>{{ '0x%02x'|format(rule.unknown_u8_1) }}</td>
-              <td><code>{{ rule.rule_bytes.hex(' ') }}</code></td><td><code>{{ rule.rule_bytes|bytes_to_str }}</code></td></tr>
+            <tbody>{% for rule in d.get('subrules', []) %}
+              <tr><td>{{ rule.get('rule_weight', '') }}</td><td>{{ rule.get('unknown_u8_1')|hexnum }}</td>
+                <td><code>{{ rule.get('rule_bytes_hex', '') }}</code></td><td><code>{{ rule.get('text', rule.get('rule_bytes_hex', '')|hextext) }}</code></td></tr>
             {% endfor %}</tbody>
           </table>
-        </div>
-        {% endif %}
-      </details>
-      {% endfor %}
-    </section>
-    {% endif %}
-    {% endmacro %}
-
-    {{ string_signatures('DEX string signatures', threat.dexhstr_signatures) }}
-    {{ string_signatures('PE extended string signatures', threat.pehstr_signatures) }}
-
-    {% if threat.aggregator_signatures %}
-    <section class="threat-section">
-      <h2>Aggregator expressions <span class="badge text-bg-secondary">{{ threat.aggregator_signatures|length }}</span></h2>
-      {% for sig in threat.aggregator_signatures %}
-      <article class="signature-card">
-        <h3>{{ sig.sig_type }}</h3>
-        {% if sig.name %}<p><strong>Name:</strong> {{ sig.name }}</p>{% endif %}
-        <p>Flags: {{ '0x%02x'|format(sig.flags) }}</p>
-        <pre>{{ sig.expression }}</pre>
-        <details><summary>References ({{ sig.references|length }})</summary>
-          <ul>{% for reference in sig.references %}<li><code>{{ reference }}</code></li>{% endfor %}</ul>
-        </details>
-      </article>
-      {% endfor %}
-    </section>
-    {% endif %}
-
-    {% if threat.version_checks %}
-    <section class="threat-section">
-      <h2>Version checks <span class="badge text-bg-secondary">{{ threat.version_checks|length }}</span></h2>
-      <p>Environment gates apply to subsequent records in signature order; these are not file detections.</p>
-      {% for sig in threat.version_checks %}
-      <article class="signature-card">
-        <strong>{{ sig.sig_type }}</strong>
-        <p><code>{{ sig.describe() }}</code></p>
-        <p>Check ID: {{ '0x%02x'|format(sig.check_id) }} · Value: {{ '0x%x'|format(sig.value) }}
-          {% if sig.is_unconditional %} · Always passes{% endif %}</p>
-      </article>
-      {% endfor %}
-    </section>
-    {% endif %}
-
-    {% if threat.behavior_signatures %}
-    <section class="threat-section">
-      <h2>Behavior signature trees <span class="badge text-bg-secondary">{{ threat.behavior_signatures|length }}</span></h2>
-      {% for sig in threat.behavior_signatures %}
-      <details class="signature-card" {% if loop.first %}open{% endif %}>
-        <summary>{{ sig.describe() }}</summary>
-        <div class="table-responsive">
-          <table class="table table-sm table-bordered signature-table">
-            <thead><tr><th>Edge</th><th>Node / action words (hex)</th><th>Conditions</th></tr></thead>
-            <tbody>{% for edge in sig.edges %}
-              <tr><td>{{ loop.index }}</td><td><code>{{ '%08x %08x %08x %08x %08x %08x'|format(edge.x, edge.y, edge.z, edge.w, edge.extra, edge.extra2) }}</code></td>
-              <td>{% for condition in edge.conditions %}
-                <p>{{ condition.side }} · {{ condition.kind }} · Flags {{ '0x%02x'|format(condition.flags) }}<br>
-                <code>{{ condition.text }}</code></p>
+          {% elif 'AGGREGATOR' in kind %}
+          <p>Name: {{ d.get('name', '') }} · Flags {{ d.get('flags')|hexnum }}</p>
+          <pre>{{ d.get('expression', '') }}</pre>
+          <h4>References</h4><pre>{{ d.get('references', [])|tojson(indent=2) }}</pre>
+          {% elif kind == 'VERSIONCHECK' %}
+          <p>{{ d.get('description', '') }}</p>
+          <p>Check ID {{ d.get('check_id')|hexnum }} · Value {{ d.get('value')|hexnum }}
+            {% if d.get('is_unconditional') %} · Always passes{% endif %}</p>
+          {% elif 'SIGTREE' in kind %}
+          <p>{{ d.get('name', '') }} {{ d.get('description', '') }}</p>
+          <table class="table table-sm table-bordered"><thead><tr><th>Edge</th><th>Node / action words</th><th>Conditions</th></tr></thead>
+            <tbody>{% for edge in d.get('edges', []) %}
+            <tr><td>{{ loop.index }}</td><td>{% for key in ['x', 'y', 'z', 'w', 'extra', 'extra2'] %}{{ edge.get(key)|hexnum(8) }} {% endfor %}</td>
+              <td>{% for condition in edge.get('conditions', []) %}
+              <p>{{ condition.get('side', '') }} · {{ condition.get('kind', '') }} · Flags {{ condition.get('flags')|hexnum }}<br>
+                <code>{{ condition.get('text', condition.get('data_hex', '')) }}</code></p>
               {% else %}No inline conditions{% endfor %}</td></tr>
             {% endfor %}</tbody>
           </table>
-        </div>
-      </details>
+          {% elif kind in ['NID', 'NID64', 'SNID'] %}
+          <p>{{ d.get('description', '') }} {{ d.get('purpose_note', '') }}</p>
+          <dl>
+            <dt>Record key</dt><dd><code>{{ d.get('record_key_hex', '') }}</code></dd>
+            {% if kind == 'SNID' %}
+            <dt>Referenced type</dt><dd>{{ d.get('record_sig_type_id')|hexnum }} {{ d.get('record_sig_type', '') }}</dd>
+            <dt>Definition group</dt><dd>{{ d.get('group_name', '') }}</dd>
+            {% else %}
+            <dt>Kind / namespace</dt><dd>{{ d.get('record_kind')|hexnum }} {{ d.get('kind_label', '') }}</dd>
+            <dt>Purpose</dt><dd>{{ d.get('purpose_label', '') }}</dd>
+            <dt>Definition group</dt><dd>{{ d.get('record_name', '') }}</dd>
+            {% if d.get('has_record_id_layout') %}
+            <dt>Packed record ID</dt><dd>Type {{ d.get('packed_sig_type', '') }} · Size {{ d.get('packed_size', '') }} · CRC32 {{ d.get('packed_crc32')|hexnum(8) }}</dd>
+            {% endif %}
+            {% endif %}
+          </dl>
+          {% elif kind == 'REVOKED_CERTIFICATE' %}
+          <p>Thumbprint: <code>{{ d.get('thumbprint_hex', 'Unavailable') }}</code></p>
+          {% endif %}
+          <details><summary>Decoded JSON (all stored fields)</summary><pre>{{ d|tojson(indent=2) }}</pre></details>
+          <a href="{{ url_for('views.api_get_signature', local_id=sig.id) }}">Signature metadata / JSON</a>
+          {% if sig.raw_available %}
+          · <a href="{{ url_for('views.api_get_raw_record', local_id=sig.id) }}">Download exact raw TLV</a>
+          {% else %}<p>Raw record unavailable (not captured).</p>{% endif %}
+        </article>
+        {% endfor %}
+      </section>
       {% endfor %}
-    </section>
-    {% endif %}
 
-    {% if threat.nid_signatures %}
-    <section class="threat-section">
-      <h2>NID / NID64 records <span class="badge text-bg-secondary">{{ threat.nid_signatures|length }}</span></h2>
-      <p class="nid-intro">
-        A NID is a <strong>reference</strong>, not a detection: a numeric id into Defender's
-        internal name/object table. It contains no byte pattern, hash or behaviour, so it
-        cannot match a file on its own. NID64 is the same idea with a 64-bit id.
-        <a href="/static/sigs/NID.md" target="_blank" rel="noopener">What is a NID?</a>
-      </p>
-      {% set noticed = namespace(purposes=[]) %}
-      {% for sig in threat.nid_signatures %}
-      <article class="signature-card static-signature-card">
-        <div class="static-signature-heading">
-          <strong>{{ sig.sig_type }}</strong>
-          <span class="badge text-bg-light">{{ sig.purpose_label }}</span>
-          {% if sig.kind_label %}<span class="badge text-bg-secondary">{{ sig.kind_label }}</span>{% endif %}
-          {% if sig.has_name %}<span class="badge text-bg-info">{{ sig.record_name }}</span>{% endif %}
-        </div>
-        <dl class="static-signature-details">
-          <div><dt>Key</dt><dd><code>{{ sig.key_text }}</code></dd></div>
-          <div><dt>Kind</dt><dd><code>{{ sig.kind_text }}</code>{% if not sig.kind_label %} · unnamed namespace{% endif %}</dd></div>
-          {% if sig.KEY_SIZE == 8 %}
-          {% if sig.has_record_id_layout %}
-          <div><dt>Packed record id</dt><dd>
-            type <code>{{ sig.packed_sig_type }}</code> ·
-            size <code>{{ sig.packed_size }}</code> ·
-            crc32 <code>0x{{ '%08x'|format(sig.packed_crc32) }}</code>
-          </dd></div>
-          {% else %}
-          <div><dt>64-bit id</dt><dd>Not a packed record id; plain id/hash in namespace <code>{{ sig.kind_text }}</code></dd></div>
-          {% endif %}
-          {% endif %}
-          {% if sig.id_block %}
-          <div><dt>Id block</dt><dd><code>0x{{ '%04x'|format(sig.id_block) }}</code></dd></div>
-          {% elif sig.is_legacy_id %}
-          <div><dt>Id space</dt><dd>legacy table (small id)</dd></div>
-          {% endif %}
-          {% if sig.has_name %}
-          <div><dt>Definition group</dt><dd>{{ sig.record_name }}</dd></div>
-          {% endif %}
-        </dl>
-        {% if sig.likely_purpose not in noticed.purposes %}
-        <p class="nid-note">{{ sig.purpose_note }}</p>
-        {% set _ = noticed.purposes.append(sig.likely_purpose) %}
-        {% endif %}
-      </article>
-      {% endfor %}
-    </section>
-    {% endif %}
-
-    {% if threat.snid_signatures %}
-    <section class="threat-section">
-      <h2>SNID references <span class="badge text-bg-secondary">{{ threat.snid_signatures|length }}</span></h2>
-      <p class="nid-intro">
-        An SNID is a <strong>reference</strong> to a shared signature record in Defender's
-        record store: a 20-byte record key plus the referenced record's type. It carries no
-        pattern of its own; the actual detection logic lives in the referenced record (often
-        a shared group such as an <code>!#ALF:</code> list).
-        <a href="/static/sigs/SNID.md" target="_blank" rel="noopener">What is an SNID?</a>
-      </p>
-      {% set snid_noticed = namespace(referenced=[]) %}
-      {% for sig in threat.snid_signatures %}
-      <article class="signature-card static-signature-card">
-        <div class="static-signature-heading">
-          <strong>References {{ sig.reference_type }}</strong>
-          <span class="badge text-bg-light">shared record</span>
-          {% if sig.is_named %}<span class="badge text-bg-info">{{ sig.group_name }}</span>{% endif %}
-        </div>
-        <dl class="static-signature-details">
-          <div><dt>Record key</dt><dd><code>{{ sig.key_hex }}</code>{% if sig.key_is_padded %} · {{ sig.key_core|length }}-byte key{% endif %}</dd></div>
-          <div><dt>Referenced type</dt><dd><code>0x{{ '%02x'|format(sig.reference_type_id) }}</code> {{ sig.reference_type }}</dd></div>
-          {% if sig.is_named %}
-          <div><dt>Definition group</dt><dd>{{ sig.group_name }}</dd></div>
-          {% endif %}
-        </dl>
-        {% if sig.reference_type_id not in snid_noticed.referenced %}
-        <p class="nid-note">
-          The referenced record is not shipped inline. It is looked up by this key in the
-          signature record store, so the SNID alone cannot match a file.
-        </p>
-        {% set _ = snid_noticed.referenced.append(sig.reference_type_id) %}
-        {% endif %}
-      </article>
-      {% endfor %}
-    </section>
-    {% endif %}
-
-    {% if signatures %}
-    <h2> Other Signatures </h2>
-    Purpose of these signatures are mostly unknown. <br><br>
-
-    {% for sig in signatures %}
-        <div class="tag">
-            <pre>{{sig}}
-            </pre>
-        </div>
-    {% endfor %}
-    {% endif %}
-
+      {% if threat.boundary_ids %}
+      <section class="threat-section"><h2>Threat framing records</h2>
+        <ul>{% for local_id in threat.boundary_ids %}<li><a href="{{ url_for('views.api_get_signature', local_id=local_id) }}">Boundary {{ local_id }} metadata / JSON</a>
+          {% if threat.raw_available %} · <a href="{{ url_for('views.api_get_raw_record', local_id=local_id) }}">Download exact raw TLV</a>{% else %} · Raw record unavailable{% endif %}</li>{% endfor %}</ul>
+      </section>
+      {% endif %}
+      <section class="threat-section"><h2>Original signature order</h2>
+        <ol>{% for sig in threat.signatures %}<li><a href="#signature-{{ sig.id }}">{{ sig.offset|hexnum }} · {{ sig.type }} · {{ sig.decode_status }}</a></li>{% endfor %}</ol>
+      </section>
     </div>
   </body>
 </html>

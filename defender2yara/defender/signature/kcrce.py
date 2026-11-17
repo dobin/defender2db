@@ -39,6 +39,16 @@ class KcrceSig(BaseSig):
     not confirmed yet.
     """
 
+    def to_details(self) -> dict:
+        return {
+            "crc1": self.crc1,
+            "crc2": self.crc2,
+            "crc3": self.crc3,
+            "region": self.region,
+            "flags": self.flags,
+            "record_name": self.record_name,
+        }
+
     def __init__(self, data: bytes, ptr: int = 0) -> None:
         self.parse_common_header(data, ptr)
         assert self.sig_type == SIG_TYPES[0x80]

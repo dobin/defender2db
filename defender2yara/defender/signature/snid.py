@@ -65,10 +65,19 @@ class SnidSig(BaseSig):
         self.record_name = None
         self.record_name_raw = b""
         if len(self.sig_data) > 21:
-            self.record_name_raw = self.sig_data[21:]
-            if self.record_name_raw.endswith(b"\x00"):
-                self.record_name_raw = self.record_name_raw[:-1]
+            self.record_name_raw = self.sig_data[21:].split(b"\x00", 1)[0]
             self.record_name = self.record_name_raw.decode("utf-8", "replace")
+
+    def to_details(self) -> dict:
+        return {
+            "record_key_hex": self.key_hex,
+            "record_sig_type_id": self.record_sig_type_id,
+            "record_sig_type": self.record_sig_type,
+            "group_name": self.group_name,
+            "is_named": self.is_named,
+            "key_is_padded": self.key_is_padded,
+            "description": self.describe(),
+        }
 
     @property
     def record_key(self) -> bytes:

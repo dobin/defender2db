@@ -184,6 +184,21 @@ class NidSig(BaseSig):
             if end >= 0:
                 self.trailing = rest[end + 1 :]
 
+    def to_details(self) -> dict:
+        return {
+            "record_key_hex": f"{self.record_key:0{self.KEY_SIZE * 2}x}",
+            "record_kind": self.record_kind,
+            "record_name": self.record_name,
+            "has_name": self.has_name,
+            "id_block": self.id_block,
+            "is_legacy_id": self.is_legacy_id,
+            "kind_label": self.kind_label,
+            "likely_purpose": self.likely_purpose,
+            "purpose_label": self.purpose_label,
+            "purpose_note": self.purpose_note,
+            "description": self.describe(),
+        }
+
     @property
     def has_name(self) -> bool:
         return len(self.record_name_raw) > 0
@@ -274,6 +289,17 @@ class Nid64Sig(NidSig):
     SIG_TYPE_ID = 0xCE
     KEY_SIZE = 8
     RECORD_ID_MAX_SIZE = 0x200000
+
+    def to_details(self) -> dict:
+        details = super().to_details()
+        details.update({
+            "packed_crc32": self.packed_crc32,
+            "packed_sig_type_id": self.packed_sig_type_id,
+            "packed_sig_type": self.packed_sig_type,
+            "packed_size": self.packed_size,
+            "has_record_id_layout": self.has_record_id_layout,
+        })
+        return details
 
     @property
     def packed_crc32(self) -> int:

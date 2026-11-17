@@ -3,6 +3,17 @@ import struct
 
 
 class HStrSubRule:
+    def to_details(self) -> dict:
+        from defender2yara.defender.signature.sigtree import decode_tree_pattern
+
+        rule_bytes = getattr(self, "rule_bytes", b"")
+        return {
+            "rule_weight": self.rule_weight,
+            "rule_size": getattr(self, "rule_size", 0),
+            "rule_bytes_hex": rule_bytes.hex(),
+            "text": decode_tree_pattern(rule_bytes),
+        }
+
     def __init__(self,data:bytes,ptr:int) -> None:
         if len(data[ptr:]) < 3:
             self.rule_weight = 0
@@ -20,6 +31,18 @@ class HStrSubRule:
 
 
 class HStrExtSubRule:
+    def to_details(self) -> dict:
+        from defender2yara.defender.signature.sigtree import decode_tree_pattern
+
+        rule_bytes = getattr(self, "rule_bytes", b"")
+        return {
+            "rule_weight": self.rule_weight,
+            "rule_size": getattr(self, "rule_size", 0),
+            "unknown_u8_1": getattr(self, "unknown_u8_1", None),
+            "rule_bytes_hex": rule_bytes.hex(),
+            "text": decode_tree_pattern(rule_bytes),
+        }
+
     def __init__(self,data:bytes,ptr:int) -> None:
         if len(data[ptr:]) < 4:
             self.rule_weight = 0

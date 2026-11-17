@@ -92,6 +92,17 @@ class SigTreeCondition:
         self.flags = flags
         self.data = data
 
+    def to_details(self) -> dict:
+        return {
+            "side": self.side,
+            "kind": self.kind,
+            "flags": self.flags,
+            "data_hex": self.data.hex(),
+            "text": self.text,
+            "is_pattern": self.is_pattern,
+            "is_hash": self.is_hash,
+        }
+
     @property
     def is_pattern(self) -> bool:
         return self.kind == "pattern"
@@ -134,6 +145,21 @@ class SigTreeEdge:
         self.extra = extra
         self.extra2 = extra2
         self.conditions = conditions or []
+
+    def to_details(self) -> dict:
+        return {
+            "x": self.x,
+            "y": self.y,
+            "z": self.z,
+            "w": self.w,
+            "extra": self.extra,
+            "extra2": self.extra2,
+            "left_flags": self.left_flags,
+            "right_flags": self.right_flags,
+            "left_length": self.left_length,
+            "right_length": self.right_length,
+            "conditions": [condition.to_details() for condition in self.conditions],
+        }
 
     @property
     def left_flags(self) -> int:
@@ -312,6 +338,19 @@ class SigTreeSig(BaseSig):
             SigTreeCondition(side, kind, flags, payload[pos:pos + length])
         )
         return pos + length
+
+    def to_details(self) -> dict:
+        return {
+            "edge_count": self.edge_count,
+            "variant": self.variant,
+            "unknown": self.unknown,
+            "tree_kind": self.tree_kind,
+            "name": self.name,
+            "meta": self.meta,
+            "is_behavior": self.is_behavior,
+            "description": self.describe(),
+            "edges": [edge.to_details() for edge in self.edges],
+        }
 
     @property
     def is_behavior(self) -> bool:

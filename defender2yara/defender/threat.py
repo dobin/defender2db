@@ -39,7 +39,7 @@ class Threat:
 
     def add_signature(self,sig:BaseSig):
         self.signatures.append(sig)
-        if sig.sig_type == "SIGNATURE_TYPE_PEHSTR" or sig.sig_type in HSTR_EXT_SIGS:
+        if (sig.sig_type == "SIGNATURE_TYPE_PEHSTR" or sig.sig_type in HSTR_EXT_SIGS) and hasattr(sig, 'subrules'):
             self.hstr_signatures.append(sig)
 
     @staticmethod

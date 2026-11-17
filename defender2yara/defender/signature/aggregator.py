@@ -128,6 +128,19 @@ class AaAggregatorExSig(BaseSig):
         # Everything after the declared body (normally nothing).
         self.extra = bytes(sd[expected:])
 
+    def to_details(self) -> dict:
+        return {
+            "flags": self.flags,
+            "name": self.name,
+            "expression": self.expression,
+            "is_attribute": self.is_attribute,
+            "references": self.references,
+            "reference_kinds": [
+                {"kind": kind, "count": count}
+                for kind, count in self.reference_kinds()
+            ],
+        }
+
     @property
     def is_attribute(self) -> bool:
         return bool(self.flags & self.FLAG_ATTRIBUTE)

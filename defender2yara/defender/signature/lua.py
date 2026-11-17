@@ -7,6 +7,15 @@ from defender2yara.defender.constant import SIG_TYPES, THREAT_NAME_PREFIX
 # Copy of ThreatBeginSig and hope for the best
 # No additional features have been implemented
 class LuaSig(BaseSig):
+    def to_details(self) -> dict:
+        return {
+            "threat_id": self.threat_id,
+            "category_id": self.category_id,
+            "type_id": self.type_id,
+            "threat_name": self.threat_name,
+            "severity_id": self.severity_id,
+        }
+
     def __init__(self,data:bytes,ptr:int=0) -> None:
         # parse common header
         self.parse_common_header(data,ptr)

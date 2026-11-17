@@ -20,7 +20,7 @@ uv sync
 ```
 
 On Debian/Ubuntu, `libarchive-dev` may also be required:
-```
+```sh
 sudo apt install libarchive-dev
 ```
 
@@ -32,10 +32,29 @@ Download current Defender Signatures (VDM) into `cache/engine` and `cache/vdm`:
 uv run defender2db --download
 ```
 
-Convert to `./cache/threats.db` SQLite DB. File will be overwritten. 
+Build a new `cache/threats.db` SQLite snapshot (published only after successful
+conversion; updates replace the previous database):
+
 ```sh
 uv run defender2db --convert
 ```
+
+Conversion uses one transaction with 5,000-record `executemany` batches and builds
+read indexes after loading. Progress separately shows threat-output generation
+and signature insertion; final integrity checks run before publication. Parsing
+throughput (MB/s) is not database conversion throughput: JSON expansion and
+Lua/YARA generation add work and storage beyond the original VDM stream.
+
+Raw capture defaults **off**. To retain every scanned TLV record, including
+threat boundaries, zero-length and global records, rebuild with:
+
+```sh
+uv run defender2db --convert --include-raw
+```
+
+This captures the effective patched/decompressed signature streams, not the
+original packed VDM containers or engine tables. Close readers before replacing
+an open database on Windows.
 
 Display first few entries of the sqlite db:
 
@@ -47,29 +66,52 @@ Browse stored YARA rules with `tools/yaraview.py`. It opens the database read-on
 and displays up to five rules by default. Options include `--name Banload`
 (case-insensitive substring), `--row-id 12` (SQLite row ID, not Defender ID),
 `--limit 10`, `--list` (list threats with rules), `--check` (compile displayed
-rules), and `--db path/to/threats.db`. Only open trusted databases: stored objects
-are deserialized using Python pickle.
+rules), and `--db cache\threats.db`. Both inspection tools open an existing
+database read-only, validate its schema version, and read stored JSON/text without
+unpickling objects or loading raw BLOBs. `tools/dbtest.py` also accepts `--db`.
 
 Lua warnings include the threat name/ID, zero-based signature index, signature
 type, decompressed VDM record offset, payload size, and first 48 payload bytes in
 hex. Offsets refer to the patched/decompressed stream, not the compressed VDM
-file. Raw signatures remain stored in the database even when Lua conversion fails.
+file. Decoded record metadata and generation diagnostics remain available when
+Lua conversion fails; exact raw bytes are retained only with `--include-raw`.
 
 
 ### Structured threat data
 
-Stored `NiceThreat` objects now include typed signature, Lua (`list[bytes]`), and
-YARA (`list[str]`) collections, plus `dexhstr_signatures`,
-`aggregator_signatures`, `version_checks`, `behavior_signatures`,
-`nid_signatures`, `pehstr_signatures`, and `revoked_certs`.
-The six decoded signature collections retain their parser objects and fields;
-raw records remain in `signatures`, including records that cannot be decoded.
+A database is one import, with SQLAlchemy 2.x mappings for five tables:
+`import_info` (schema/decoder/signature/engine versions, conversion time and raw
+capture flag), `source` (effective stream identity), `threat`, `signature`, and
+`raw_record`. It is a parsed snapshot, not a serialized Python object graph.
+Legacy pickle databases and unsupported schema versions require rebuilding with
+`--convert`; there is no migration or automatic re-decoding on read.
 
-The threat page displays weighted DEX/PE patterns, aggregator expressions and
-references, environment gates, behavior-tree edges/conditions, and NID keys/names
-in separate sections. Undecodable records remain visible as raw signatures.
-Existing databases are decoded on load without rewriting them; run `--convert`
-to persist the new collections. Lua and YARA generation are unchanged.
+Threats contain explicit identity/name/category/severity fields, suffixes and
+`generated` JSON. Each `generated.lua` / `generated.yara` object has a `status`,
+`items` (text strings), and optional diagnostics. Empty/not-applicable output and
+failed generation remain distinct. Readers never rerun parsers or generators.
+
+Every scanned record has a local ID, source ID/offset, role, type ID, sizes,
+`decode_status` (`decoded`, `partial`, `unsupported`, `error`), `details_version`,
+and an explicit JSON `details` object. Meaningful binary fields use lowercase
+`*_hex` strings; 64-bit keys/packed IDs use fixed-width hex strings rather than
+precision-losing JSON numbers. Unknown fields remain visible in the generic JSON
+view. Unsupported records have no decoded payload; raw omission does not imply
+that decoding failed.
+
+The threat page retains static fingerprints, weighted DEX/PE patterns,
+aggregator expressions/references, environment gates, behavior-tree
+edges/conditions and NID/SNID references. It also shows decode/generation statuses,
+source offsets, original record order, generic JSON and lazy raw downloads.
+Version gates affect subsequent source-order records, even when displayed in
+separate groups. Reference resolution is not attempted: opaque SNID keys are not
+payload hashes, names can describe groups, and targets may be external or
+ambiguous.
+
+Names and Defender IDs are **not unique**. Local threat/signature IDs identify
+occurrences only within the current snapshot. Offsets identify records within
+the effective patched/decompressed `source` stream. Ordinary reads exclude raw
+BLOBs; `raw_record` is empty unless conversion used `--include-raw`.
 
 ### Web Application
 
@@ -89,19 +131,34 @@ REST search API (returns matching threat summaries):
 GET /api/threats?threat_name=metasploit
 ```
 
-Use the exact threat name to retrieve one full threat, including signatures and scripts:
+Search summaries contain `id` (local threat ID), `name`, `source_id`,
+`defender_id` and `signature_count`. Use the returned local ID to retrieve a
+specific occurrence, even when multiple sources contain the same name:
 
 ```text
-GET /api/threat?name=Win32%2FBearfoos.A
+GET /api/threats/12
+GET /api/signatures/34
+GET /api/signatures/34/raw
 ```
 
-Both endpoints return JSON. Missing query parameters return `400`; an exact name not
-found by `/api/threat` returns `404`.
+Threat details contain scalar threat fields, severity display, `generated`,
+`raw_available`, ordered `signatures` (excluding framing), and `boundary_ids`.
+Signature details contain `id`, `source_id`, `threat_id`, `type_id`, `type`,
+`offset`, `size` (payload bytes), `header_size`, `record_size`, `role`,
+`decode_status`, `details_version`, `details`, and `raw_available`. The raw route
+alone downloads exact header-plus-payload bytes as `application/octet-stream`.
+
+Search without `threat_name` returns `400`; unknown local IDs return `404`.
+Raw bytes omitted at conversion return `409` with a rebuild instruction, not an
+empty download. The HTML threat route is `/threat/12`. Name-only detail routes
+are removed. The web server accepts `--db cache\threats.db`; Flask's
+`DATABASE` configuration (including `FLASK_DATABASE`) selects the reader database.
 
 ### MCP Server
 
-The stdio MCP server exposes the same two operations as tools: `search_threats`
-(name substring search) and `get_threat` (exact-name details). Start it with:
+The stdio MCP server exposes `search_threats` (name substring search),
+`get_threat` (local threat ID), `get_signature` (local signature ID), and
+`get_raw_signature` (explicit raw access as `data_hex`). Start it with:
 
 ```sh
 uv run defender2db-mcp
@@ -110,7 +167,11 @@ uv run defender2db-mcp
 Configure your MCP client to launch this command from the project directory so it
 uses the same `cache/threats.db` database as the web application. Search results and
 threat details use the same fields and serialization as the REST API; missing input
-or an unknown exact name is returned as a tool error.
+or an unknown local ID is returned as a tool error. Raw-unavailable errors explain
+how to rebuild with raw capture. Python readers expose `search_threats`,
+`get_threat_details`, `get_signature_details`, and `get_raw_record`, each accepting
+an optional `database` path. Missing rows raise `LookupError`; omitted raw capture
+raises `RawUnavailableError`.
 
 ### ASR rules
 
