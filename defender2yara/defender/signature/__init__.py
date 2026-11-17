@@ -14,5 +14,7 @@ from defender2yara.defender.signature.nid import NidSig, Nid64Sig
 from defender2yara.defender.signature.sigtree import SigTreeSig, SIGTREE_SIGS
 from defender2yara.defender.signature.pestatic import PestaticSig, PESTATIC_SIGS
 from defender2yara.defender.signature.bm_info import BmInfoSig
+from defender2yara.defender.signature.nscript import NscriptBruteSig, NscriptSpSig
+from defender2yara.defender.signature.macro_source import MacroSourceSig
 from defender2yara.defender.signature.aggregator import AaAggregatorExSig
 from defender2yara.defender.signature.versioncheck import VersionCheckSig

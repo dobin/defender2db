@@ -30,6 +30,9 @@ SIGNATURE_TEMPLATES = {
     'NID64': 'signatures/nid64.html',
     'SNID': 'signatures/snid.html',
     'REVOKED_CERTIFICATE': 'signatures/revoked_certificate.html',
+    'NSCRIPT_SP': 'signatures/nscript_sp.html',
+    'NSCRIPT_BRUTE': 'signatures/nscript_brute.html',
+    'MACRO_SOURCE': 'signatures/macro_source.html',
 }
 
 SIGNATURE_DESCRIPTIONS_PATH = Path(__file__).parent / 'static' / 'sigs' / 'signatures.json'

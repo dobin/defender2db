@@ -46,5 +46,17 @@
   },
   "REVOKED_CERTIFICATE": {
     "description": "A revoked-certificate signature identifies a certificate thumbprint that Defender no longer trusts."
+  },
+  "NSCRIPT_SP": {
+    "description": "A compact script-content condition: two hashes of normalised script fragments plus the matched window length.",
+    "detail": "SIG_NSCRIPT.md"
+  },
+  "NSCRIPT_BRUTE": {
+    "description": "A readable script-content signature: normalised script text with wildcards, plus a script-type restriction and search direction.",
+    "detail": "SIG_NSCRIPT.md"
+  },
+  "MACRO_SOURCE": {
+    "description": "A macro source signature: an ordered sequence of normalised macro/VBA routine hashes for a specific macro stream kind.",
+    "detail": "SIG_MACRO_SOURCE.md"
   }
 }

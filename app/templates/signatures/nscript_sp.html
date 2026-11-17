@@ -1,0 +1,8 @@
+{% set d = sig.details %}
+<dl>
+  <dt>Hash 1</dt><dd><code>{{ d.get('hash1')|hexnum(8) }}</code></dd>
+  <dt>Hash 2</dt><dd><code>{{ d.get('hash2')|hexnum(8) }}</code></dd>
+  <dt>Match window</dt><dd>{{ d.get('match_length') }} bytes</dd>
+  <dt>Flags</dt><dd><code>{{ d.get('flags')|hexnum(2) }}</code>{% if d.get('flag_0x80') %} (extra flag 0x80){% endif %}{% if d.get('irc_special_case') %}, legacy :IRC/ case{% endif %}</dd>
+  {% if d.get('record_name') %}<dt>Engine label</dt><dd>{{ d.get('record_name') }}</dd>{% endif %}
+</dl>

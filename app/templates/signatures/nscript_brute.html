@@ -1,0 +1,10 @@
+{% set d = sig.details %}
+<dl>
+  <dt>Script type</dt><dd>{{ d.get('script_type', '') }}{% if d.get('kind_high_flag') %} (kind flag 0x0400){% endif %}</dd>
+  <dt>Search mode</dt><dd>{{ d.get('mode_label', '') }} ({{ d.get('mode') }})</dd>
+  <dt>Any length</dt><dd>{% if d.get('any_length_set') %}{{ d.get('any_length') }}{% else %}unbounded{% endif %}</dd>
+  <dt>Pattern</dt><dd><code>{{ d.get('pattern_text', '') }}</code></dd>
+  <dt>Details</dt><dd>{{ d.get('pattern_length') }} bytes, {{ d.get('wildcard_count') }} wildcard tokens{% if d.get('loose_pattern') %}, non-contiguous{% endif %}</dd>
+  <dt>Engine flag word</dt><dd><code>{{ d.get('flag_word')|hexnum(4) }}</code></dd>
+  {% if d.get('record_name') %}<dt>Engine label</dt><dd>{{ d.get('record_name') }}</dd>{% endif %}
+</dl>

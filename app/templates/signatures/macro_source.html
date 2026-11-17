@@ -1,0 +1,9 @@
+{% set d = sig.details %}
+<dl>
+  <dt>Source kind</dt><dd>{{ d.get('source_kind_label', '') }} ({{ d.get('source_kind') }})</dd>
+  <dt>Routines</dt><dd>{{ d.get('routine_count') }}{% if d.get('has_second_hash_array') %} (64-bit keys){% else %} (32-bit keys){% endif %}</dd>
+  {% if d.get('record_name') %}<dt>Engine label</dt><dd>{{ d.get('record_name') }}</dd>{% endif %}
+</dl>
+<ol>
+  {% for key in d.get('routine_keys', []) %}<li><code>{{ key }}</code></li>{% endfor %}
+</ol>

@@ -171,6 +171,12 @@ class Vdm:
             entry = PestaticSig(data,ptr)
         elif sig_type == "SIGNATURE_TYPE_BM_INFO":
             entry = BmInfoSig(data,ptr)
+        elif sig_type == "SIGNATURE_TYPE_NSCRIPT_SP":
+            entry = NscriptSpSig(data,ptr)
+        elif sig_type == "SIGNATURE_TYPE_NSCRIPT_BRUTE":
+            entry = NscriptBruteSig(data,ptr)
+        elif sig_type == "SIGNATURE_TYPE_MACRO_SOURCE":
+            entry = MacroSourceSig(data,ptr)
         elif sig_type == "SIGNATURE_TYPE_AAGGREGATOREX":
             entry = AaAggregatorExSig(data,ptr)
         elif sig_type == "SIGNATURE_TYPE_VERSIONCHECK":
