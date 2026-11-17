@@ -167,6 +167,10 @@ class Vdm:
             entry = Nid64Sig(data,ptr)
         elif sig_type in SIGTREE_SIGS:
             entry = SigTreeSig(data,ptr)
+        elif sig_type in PESTATIC_SIGS:
+            entry = PestaticSig(data,ptr)
+        elif sig_type == "SIGNATURE_TYPE_BM_INFO":
+            entry = BmInfoSig(data,ptr)
         elif sig_type == "SIGNATURE_TYPE_AAGGREGATOREX":
             entry = AaAggregatorExSig(data,ptr)
         elif sig_type == "SIGNATURE_TYPE_VERSIONCHECK":

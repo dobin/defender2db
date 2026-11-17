@@ -26,6 +26,45 @@ OPCODE_HASHES = {
 # The per-side flag that says "an inline pattern follows".
 FLAG_INLINE = 0x10
 
+# The per-side flag that says the pattern/hash is UTF-16LE text (inline
+# patterns with flag 0x40) or that the condition is a hash compare.
+FLAG_WIDE = 0x40
+
+# Documented bits of the per-side flag byte.  The remaining bits are
+# comparison/action modifiers; their exact meaning is not confirmed, so they
+# are rendered as their raw value.
+EDGE_FLAG_LABELS = {
+    FLAG_INLINE: "inline pattern",
+    FLAG_WIDE: "wide / hash",
+}
+
+# ``tree_kind`` -> attribute id namespace observed in the rules.
+# The engine selects a per-kind sigattr notifier context
+# (``DAT_181112bf0 + kind * 0xa0``); kind 6 is the NRI (network) notifier.
+TREE_KIND_ATTRIBUTE_NAMESPACES = {
+    0: "0x51xx",
+    1: "0x50xx",
+    2: "behaviour-monitoring events",
+    3: "0x30xx (file/PE metadata)",
+    4: "0x52xx",
+    5: "0x60xx",
+    6: "0x70xx (NRI network attributes)",
+}
+
+
+def edge_flags_text(flags: int) -> str:
+    """Render a per-side edge flag byte with the confirmed bits named."""
+    known = 0
+    parts = []
+    for bit, label in EDGE_FLAG_LABELS.items():
+        known |= bit
+        if flags & bit:
+            parts.append(label)
+    unknown = flags & ~known
+    if unknown:
+        parts.append(f"0x{unknown:02x}")
+    return "|".join(parts) if parts else "0x00"
+
 
 def _decode_literal(data: bytes) -> str:
     """Decode a literal run as UTF-16LE when it looks like text, else latin-1."""
@@ -158,8 +197,46 @@ class SigTreeEdge:
             "right_flags": self.right_flags,
             "left_length": self.left_length,
             "right_length": self.right_length,
+            "attribute_id": self.attribute_id,
+            "attribute_id_hex": f"0x{self.attribute_id:04x}",
+            "left_flags_text": edge_flags_text(self.left_flags),
+            "right_flags_text": edge_flags_text(self.right_flags),
+            "left_value": self.left_value,
+            "right_value": self.right_value,
             "conditions": [condition.to_details() for condition in self.conditions],
         }
+
+    @property
+    def attribute_id(self) -> int:
+        """Low 16 bits of ``y``: the sigattr attribute/field being compared.
+
+        ``FUN_1803a02a8`` copies ``y`` to the node's first dword and the tree
+        walker binary-searches the node index by that ``u16`` against the
+        current match context's attribute id (``FUN_1800d2510``).  Each
+        ``tree_kind`` uses its own attribute namespace, e.g. ``0x30xx`` for
+        file/PE metadata trees.
+        """
+        return self.y & 0xFFFF
+
+    @property
+    def left_value(self):
+        """Expected value for the left side when it has no inline condition.
+
+        The engine stores ``z`` as the node's left condition word and compares
+        it against a 32-bit hash of the live attribute value; ``FUN_1803a02a8``
+        overwrites that word when an inline pattern or opcode blob follows, in
+        which case the on-disk value is unused.
+        """
+        if self.condition("left") is not None:
+            return None
+        return self.z
+
+    @property
+    def right_value(self):
+        """Expected value for the right side (see :attr:`left_value`)."""
+        if self.condition("right") is not None:
+            return None
+        return self.w
 
     @property
     def left_flags(self) -> int:
@@ -168,6 +245,14 @@ class SigTreeEdge:
     @property
     def right_flags(self) -> int:
         return self.x & 0xFF
+
+    @property
+    def left_flags_text(self) -> str:
+        return edge_flags_text(self.left_flags)
+
+    @property
+    def right_flags_text(self) -> str:
+        return edge_flags_text(self.right_flags)
 
     @property
     def left_length(self) -> int:
@@ -226,13 +311,27 @@ class SigTreeSig(BaseSig):
     the usual ``0x90`` HSTR wildcard opcodes (see
     :func:`decode_tree_pattern`).
 
-    ``SIGTREE_BM`` is the behaviour-monitoring flavour; in the shipped
-    database every ``0xb3`` record uses ``tree_kind == 2``.  ``SIGTREE`` and
-    ``SIGTREE_EXT`` use kinds 0..6 and add plain string patterns and MD5
-    hashes to the tree.
+    ``y & 0xffff`` is the **attribute id** of the edge.  The engine binary
+    searches its node index by that ``u16`` against the current sigattr match
+    context (``FUN_1800d2510``), so a sig tree is a decision tree over object
+    attributes (PE metadata, registry, process, network request, ...), not over
+    file bytes.  Each ``tree_kind`` selects one attribute namespace:
+    ``0x30xx`` = file/PE metadata (kind 3), ``0x60xx``/``0x70xx`` = process and
+    NRI network attributes (kinds 5/6); see
+    :data:`TREE_KIND_ATTRIBUTE_NAMESPACES`.
+
+    ``SIGTREE`` (0x40) stores only the precomputed 32-bit attribute values in
+    ``z``/``w`` (with the hash-window lengths in the high bytes of ``y``) and
+    never carries inline patterns or hashes.  ``SIGTREE_EXT`` (0x41) uses the
+    same tree format and additionally embeds the leaf patterns/hashes in the
+    record — the "EXT" is the in-record condition blob.  ``SIGTREE_BM``
+    (0xb3) is the behaviour-monitoring flavour: in the shipped database every
+    ``0xb3`` record uses ``tree_kind == 2`` and it is the type that carries
+    most of the behaviour string patterns.
 
     All 17,940 ``0xb3``, 15,058 ``0x40`` and 4,207 ``0x41`` records in the
-    shipped database consume their payload exactly.
+    shipped database consume their payload exactly (0x40: 0 patterns/hashes;
+    0x41: 47,140 patterns and 15,467 MD5 hashes).
     """
 
     def __init__(self, data: bytes, ptr: int = 0) -> None:
@@ -345,9 +444,12 @@ class SigTreeSig(BaseSig):
             "variant": self.variant,
             "unknown": self.unknown,
             "tree_kind": self.tree_kind,
+            "attribute_namespace": self.attribute_namespace,
+            "attribute_ids": self.attribute_ids,
             "name": self.name,
             "meta": self.meta,
             "is_behavior": self.is_behavior,
+            "has_inline_conditions": self.has_inline_conditions,
             "description": self.describe(),
             "edges": [edge.to_details() for edge in self.edges],
         }
@@ -355,6 +457,24 @@ class SigTreeSig(BaseSig):
     @property
     def is_behavior(self) -> bool:
         return self.sig_type == SIG_TYPES[0xB3]
+
+    @property
+    def attribute_namespace(self) -> str:
+        """Best-effort label for the attribute-id namespace of this kind."""
+        return TREE_KIND_ATTRIBUTE_NAMESPACES.get(self.tree_kind, "unknown")
+
+    @property
+    def attribute_ids(self) -> list:
+        """Distinct attribute ids referenced by the tree, in first-use order."""
+        seen = []
+        for edge in self.edges:
+            if edge.attribute_id not in seen:
+                seen.append(edge.attribute_id)
+        return seen
+
+    @property
+    def has_inline_conditions(self) -> bool:
+        return bool(self.patterns or self.hashes)
 
     @property
     def patterns(self) -> list:
@@ -369,6 +489,12 @@ class SigTreeSig(BaseSig):
             f"{self.sig_type} kind={self.tree_kind} variant={self.variant} "
             f"edges={self.edge_count}"
         )
+        if self.attribute_ids:
+            ids = ",".join(f"0x{value:04x}" for value in self.attribute_ids[:4])
+            if len(self.attribute_ids) > 4:
+                ids += ",..."
+            text += f" attrs={ids}"
         if self.name:
             text += f" name={self.name!r}"
         return text
+
