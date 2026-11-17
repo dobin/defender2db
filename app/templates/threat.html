@@ -7,7 +7,6 @@
       <header class="threat-overview">
         <div class="threat-heading">
           <h1 class="threat-title">{{ threat.name }}</h1>
-          <span class="badge text-bg-{% if threat.severity == 'Critical' %}danger{% elif threat.severity == 'High' %}warning{% else %}secondary{% endif %}">{{ threat.severity }}</span>
         </div>
         <div class="threat-facts">
           <span><strong>Local ID</strong> {{ threat.id }}</span>
@@ -18,6 +17,7 @@
           {% if threat[field] %}<span><strong>{{ field|capitalize }}</strong> {{ threat[field] }}</span>{% endif %}
           {% endfor %}
           {% if threat.suffixes %}<span><strong>Suffixes</strong> {{ threat.suffixes|join(', ') }}</span>{% endif %}
+        <span class="badge text-bg-{% if threat.severity == 'Critical' %}danger{% elif threat.severity == 'High' %}warning{% else %}secondary{% endif %}">{{ threat.severity }}</span>
         </div>
       </header>
 
@@ -39,19 +39,12 @@
       } %}
       {% for kind, records in groups.items() %}
       <section class="threat-section signature-group signature-group-{{ kind|lower }}">
-        <h2>{{ titles.get(kind, kind) }} <span class="badge text-bg-secondary">{{ records|length }}</span></h2>
+        <h2>{{ titles.get(kind, kind) }}</h2>
         {% set signature_info = signature_descriptions.get(kind, {}) %}
         {% set description = signature_info.get('description', signature_descriptions.get('_default', '')|replace('{type}', kind)) %}
         {% if description %}<p class="signature-type-description">{{ description }}
           {% if signature_info.get('detail') %}<a href="{{ url_for('static', filename='sigs/' ~ signature_info.detail) }}">Detailed signature description</a>{% endif %}
         </p>{% endif %}
-        {% if kind in ['NID', 'NID64'] %}
-        <p class="nid-intro">A NID is a reference, not a detection: a numeric id into Defender's internal name/object table. It contains no byte pattern, hash or behaviour, so it cannot match a file on its own. <a href="/static/sigs/NID.md" target="_blank" rel="noopener">What is a NID?</a></p>
-        {% elif kind == 'SNID' %}
-        <p class="nid-intro">An SNID refers to a shared signature record rather than embedding its body. Some targets live outside the shipped VDM, and the key is not necessarily a payload hash. <a href="/static/sigs/SNID.md" target="_blank" rel="noopener">What is an SNID?</a></p>
-        {% elif kind == 'VERSIONCHECK' %}
-        <p>Environment gates apply to subsequent records in source order, not only to this display group.</p>
-        {% endif %}
         {% for sig in records %}
         <article class="signature-card signature-card-{{ kind|lower }}" id="signature-{{ sig.id }}">
           <h3>{{ sig.type }} &#183; local ID {{ sig.id }}</h3>

@@ -1,3 +1,2 @@
 {% set d = sig.details %}
-<p>PE extended string signature &#183; Name / reference: {{ d.get('name', '') }} &#183; Threshold {{ d.get('threshold', '') }} &#183; Flags {{ d.get('flags')|hexnum }} &#183; End marker {{ d.get('end_marker', '') }}</p>
 <table class="table table-sm table-bordered"><thead><tr><th>Weight</th><th>Flags</th><th>Pattern (hex)</th><th>Text (best effort)</th></tr></thead><tbody>{% for rule in d.get('subrules', []) %}<tr><td>{{ rule.get('rule_weight', '') }}</td><td>{{ rule.get('unknown_u8_1')|hexnum }}</td><td><code>{{ rule.get('rule_bytes_hex', '') }}</code></td><td><code>{{ rule.get('text', rule.get('rule_bytes_hex', '')|hextext) }}</code></td></tr>{% endfor %}</tbody></table>
