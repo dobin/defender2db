@@ -1,7 +1,28 @@
 <title>DefenderSearch</title>
 
+<script>
+  const savedTheme = localStorage.getItem('theme');
+  document.documentElement.dataset.theme = savedTheme === 'light' ? 'light' : 'dark';
+</script>
 <link href="/static/bootstrap.min.css" rel="stylesheet">
 <script src="/static/bootstrap.bundle.min.js"></script>
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const toggle = document.querySelector('[data-theme-toggle]');
+    const syncToggle = () => {
+      const darkMode = document.documentElement.dataset.theme === 'dark';
+      toggle.setAttribute('aria-checked', String(darkMode));
+      toggle.title = `Dark mode ${darkMode ? 'on' : 'off'}`;
+    };
+    syncToggle();
+    toggle.addEventListener('click', () => {
+      const theme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+      document.documentElement.dataset.theme = theme;
+      localStorage.setItem('theme', theme);
+      syncToggle();
+    });
+  });
+</script>
 <link rel="stylesheet" href="/static/bootstrap-icons.css">
 
 <link href="/static/styles.css" rel="stylesheet"></link>

@@ -60,10 +60,9 @@
           {% if sig.decode_status == 'error' %}<p>Decoding failed; see stored diagnostics below.</p>{% endif %}
           {% if sig.decode_status == 'partial' %}<p>Partially decoded; unknown interpretation remains.</p>{% endif %}
           {% include sig.template %}
-          <details><summary>Decoded JSON (all stored fields)</summary><pre>{{ sig.details|tojson(indent=2) }}</pre></details>
-          <a href="{{ url_for('views.api_get_signature', local_id=sig.id) }}">Signature metadata / JSON</a>
+          <a href="{{ url_for('views.api_get_signature', local_id=sig.id) }}">Signature metadata</a>
           {% if sig.raw_available %}
-          &#183; <a href="{{ url_for('views.api_get_raw_record', local_id=sig.id) }}">Download exact raw TLV</a>
+          &#183; <a href="{{ url_for('views.api_get_raw_record', local_id=sig.id) }}">Raw TLV</a>
           {% else %}<p>Raw record unavailable (not captured).</p>{% endif %}
         </article>
         {% endfor %}
