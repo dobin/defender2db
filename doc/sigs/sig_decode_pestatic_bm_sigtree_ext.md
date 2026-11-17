@@ -409,6 +409,104 @@ Records per kind:
 
 ---
 
+### What the BM edge words actually mean
+
+`SIGTREE_BM` (`0xb3`, `tree_kind == 2`) edges are **behaviour-monitoring event
+predicates**, not opaque "node/action words":
+
+```
+y & 0xffff   BM event id (see FUN_1809f649c)
+x & 0xff     right condition flags
+x >> 8 & 0xff left condition flags
+x >> 16      node control bits (not fully decoded)
+y >> 24      left hash window / inline length
+y >> 16 & 0xff right hash window / inline length
+z            CRC32 of the left attribute text (or a condition-record id)
+w            CRC32 of the right attribute text (or a condition-record id)
+```
+
+`FUN_1809f649c` is the engine's own BM event-id -> name helper.  It maps the
+whole `0x4000..0x40b1` range, e.g. `0x4011 = BM_ProcessStart`,
+`0x4017 = BM_EngineInternal`, `0x4009 = BM_RegistrySetValue`,
+`0x406b = BM_SignatureTrigger`, `0x40b0/0x40b1 = BM_PipeCreate/PipeOpen`.
+`FUN_18052e7cc` shows the same ids being emitted from the event categories.
+
+Two ids are synthetic and do not appear in that switch:
+
+* `0xf000` is `LuaCallSigattrBM`: `FUN_180157be0` rewrites the context
+  attribute id to `0xf000` when a node has the Lua-callback control bit.
+* `0x40ff` is not named anywhere in mpengine.  All 4,407 `0x40ff` edges in the
+  shipped database use a wide (`0x40`), 36-character left value and an "any"
+  right side; 36 is the exact length of a GUID.  It is probably an internal /
+  cloud-only event carrying a fixed-size identifier, but the name is not
+  recovered.
+
+#### Condition flags (`FUN_1800d5880`)
+
+For a value-only condition the matcher behaves as follows:
+
+| flag | meaning |
+|-----:|---------|
+| `0x01` | **suffix**: hash the last `length` characters (offset `live_len - length`) |
+| `0x02` | **any**: return true without inspecting the value |
+| `0x04` | **exact**: require `live_len == length`, then hash the prefix |
+| `0x08` | case-sensitive hash / memcmp variant |
+| `0x10` | inline pattern blob follows in the record |
+| `0x20` | list / any-of: resolve an attribute record and test alternatives |
+| `0x40` | wide UTF-16LE value |
+| `0x80` | invoke an engine callback before comparing |
+
+Without `0x01`/`0x04` the condition is a **prefix** match of `length`
+characters/bytes; that is why the length is called a hash window.  This is
+also why the same edge can match a long path with a short suffix, e.g.
+`0x41` = wide + suffix, `0x40` = wide + prefix, `0x44` = wide + exact.
+
+#### Value words are CRC32, not opaque actions
+
+`FUN_1802371d0` hashes the live attribute with `FUN_1806765c0` (narrow) or
+`FUN_180676604` (wide).  The CRC is CRC-32 with init `0xffffffff`, no final
+XOR, and ASCII case folding; wide strings hash their characters as
+lowercased UTF-16LE code units.  The compile-time `z`/`w` words are the same
+CRC, so some can be resolved to the original text by matching known strings:
+
+| value (length) | text |
+|----------------|------|
+| `0x98e9d724` (10) | `SMS_THREAT` |
+| `0x67f1cc42` (11) | `BM_FILEOPEN` |
+| `0x6bf27ea1` (21) | `BM_BLOCKPROCESSCREATE` |
+| `0x6dfb367b` (8) | `CmdLowfi` |
+| `0x35c89e67` (9) | `INTEGRITY` |
+| `0xf9ab6713` (9) | `FILE_COPY` |
+| `0xc7f18c20` (15) | `\powershell.exe` |
+| `0xe0b63504` (8) | `\cmd.exe` |
+| `0x7072d606` (13) | `\rundll32.exe` |
+| `0xfe3a6f6a` (12) | `\wscript.exe` |
+| `0x25be5a07` (13) | `\certutil.exe` |
+| `0xde038d24` (9) | `mshta.exe` |
+
+`BM_EngineInternal` (`0x4017`) is the generic internal event bus.  Its first
+parameter is a **tag** such as `SMS_THREAT`, `BM_FILEOPEN`, `CmdLowfi`,
+`INTEGRITY` or `FILE_COPY`, and its second parameter is the tag payload
+(threat name, path, command line, ...).  In the `!sms` signatures the payload
+is a threat name: the `w` words match the CRC of ordinary `threat.name`
+values.  This is how a behaviour signature can chain on another detection.
+
+#### Worked example: `Behavior:Win32/CobaltStrike.J!sms`
+
+The record (local id `2465931`, 4 edges, variant 0) decodes to:
+
+| # | event | left | right |
+|--:|-------|------|-------|
+| 1 | `BM_ProcessStart` (`0x4011`) | wide suffix, 26 chars (`0xf4202780`) | any |
+| 2 | `BM_EngineInternal` (`0x4017`) | wide prefix `SMS_THREAT` | `HackTool:Win32/CobaltStrike.I!sms` |
+| 3 | `BM_EngineInternal` (`0x4017`) | wide prefix `SMS_THREAT` | `HackTool:Win64/CobaltStrike.I!sms` |
+| 4 | `0x40ff` (unnamed) | wide prefix, 36 chars (`0x1762ac1e`) | any |
+
+So edge 2/3 are a detection chain: the `J` behaviour signature fires when the
+`I` SMS threat (32- or 64-bit) has been detected.  Edge 1 is a process-start
+predicate whose 26-character suffix is not yet resolved, and edge 4 is an
+unresolved 36-character internal identifier (GUID-sized).
+
 ## 4. Resulting code
 
 * `defender2yara/defender/signature/pestatic.py` — `PestaticSig`,
@@ -416,7 +514,12 @@ Records per kind:
 * `defender2yara/defender/signature/bm_info.py` — `BmInfoSig`,
   `BM_ACTION_BITS`, `bits_to_names`, `names_to_bits`.
 * `defender2yara/defender/signature/sigtree.py` — attribute id / value
-  properties, flag rendering, `TREE_KIND_ATTRIBUTE_NAMESPACES`.
+  properties, flag rendering, `TREE_KIND_ATTRIBUTE_NAMESPACES`,
+  `BM_EVENT_NAMES`, `KNOWN_VALUE_STRINGS`, `describe_side()` and
+  `enrich_sigtree_details()`.
+* `defender2yara/threat_api.py` — enriches stored sig-tree details on read so
+  the HTML/API/MCP views show the decoded event names without re-importing the
+  database.
 * `defender2yara/defender/vdm.py` — dispatch for `0x87`, `0xcb` and `0xa8`.
 * `tests/test_signature_pestatic_bm.py` — vectors from the real database.
 
@@ -432,3 +535,11 @@ reporting metadata, and the sig-tree boolean/edge model is still not confirmed
   need a different interpretation (flags?) and are currently only flagged.
 * The sigattr attribute-id -> field-name mapping is per object class and was
   not recovered; only the namespaces above are known.
+* `0x40ff` in BM trees is not present in the engine's event-name switch.  Its
+  edges always carry a 36-character wide left value (GUID-sized) and an "any"
+  right side; the event producer/name is still unknown.
+* The upper 16 bits of `x` (node control bits, e.g. `0x04`, `0x02`) change how
+  the walker advances between nodes.  They are exposed as `control_flags` but
+  the full state machine (`FUN_180157be0`) is not decoded yet.
+* Value words that are not in the known-value table remain 32-bit CRCs; they
+  cannot be inverted, only matched against candidate strings.

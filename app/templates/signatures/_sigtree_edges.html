@@ -1,0 +1,53 @@
+{% set d = sig.details %}
+<table class="table table-sm table-bordered align-middle">
+  <thead>
+    <tr>
+      <th style="width: 3rem">#</th>
+      <th>Event / attribute</th>
+      <th>Left condition</th>
+      <th>Right condition</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for edge in d.get('edges', []) %}
+    <tr>
+      <td>{{ loop.index }}</td>
+      <td>
+        <strong>{{ edge.get('attribute_name', edge.get('attribute_id_hex', '')) }}</strong><br>
+        <small class="text-muted">
+          {{ edge.get('attribute_id_hex', '') }}
+          {% if edge.get('control_flags') is not none %}
+            &#183; control {{ edge.get('control_flags_hex') }}
+          {% endif %}
+        </small>
+      </td>
+      <td>
+        {% if edge.get('left_predicate') %}
+          {{ edge.get('left_predicate') }}
+        {% else %}
+          {% set conditions = edge.get('conditions', [])|selectattr('side', 'equalto', 'left')|list %}
+          {% if conditions %}
+            {{ conditions[0].get('kind', '') }} <code>{{ conditions[0].get('text', conditions[0].get('data_hex', '')) }}</code>
+          {% else %}
+            <span class="text-muted">flags {{ edge.get('left_flags')|hexnum }} &#183; len {{ edge.get('left_length') }} &#183; value {{ edge.get('left_value')|hexnum(8) }}</span>
+          {% endif %}
+        {% endif %}
+      </td>
+      <td>
+        {% if edge.get('right_predicate') %}
+          {{ edge.get('right_predicate') }}
+        {% else %}
+          {% set conditions = edge.get('conditions', [])|selectattr('side', 'equalto', 'right')|list %}
+          {% if conditions %}
+            {{ conditions[0].get('kind', '') }} <code>{{ conditions[0].get('text', conditions[0].get('data_hex', '')) }}</code>
+          {% else %}
+            <span class="text-muted">flags {{ edge.get('right_flags')|hexnum }} &#183; len {{ edge.get('right_length') }} &#183; value {{ edge.get('right_value')|hexnum(8) }}</span>
+          {% endif %}
+        {% endif %}
+      </td>
+    </tr>
+    {% else %}
+    <tr><td colspan="5" class="text-muted">No edges.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>

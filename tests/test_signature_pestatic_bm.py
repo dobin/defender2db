@@ -167,7 +167,7 @@ class SigTreeAttributeTests(unittest.TestCase):
         self.assertEqual(edge.left_value, 0x296929F7)
         self.assertEqual(edge.right_value, 0)
         self.assertEqual(edge.left_flags_text, "0x00")
-        self.assertEqual(edge.right_flags_text, "0x02")
+        self.assertEqual(edge.right_flags_text, "any")
         self.assertEqual(sig.attribute_ids, [0x3008])
         self.assertEqual(sig.attribute_namespace, "0x30xx (file/PE metadata)")
         self.assertFalse(sig.has_inline_conditions)
@@ -186,6 +186,53 @@ class SigTreeAttributeTests(unittest.TestCase):
         self.assertTrue(sig.has_inline_conditions)
         self.assertEqual(sig.patterns[0].text, "AB")
         self.assertEqual(edge.left_flags_text, "inline pattern")
+
+    def test_bm_event_names_and_known_values(self):
+        # Real Behavior:Win32/CobaltStrike.J!sms record, local id 2465931.
+        raw = bytes.fromhex(
+            "b34500000400010200024104001140001a802720f400000000"
+            "404002001740210a24d7e998ad190406"
+            "404002001740210a24d7e99828e5311b"
+            "02400200ff4000241eac621700000000"
+        )
+        sig = SigTreeSig(raw)
+        self.assertTrue(sig.is_behavior)
+        self.assertEqual([edge.attribute_name for edge in sig.edges], [
+            "BM_ProcessStart",
+            "BM_EngineInternal",
+            "BM_EngineInternal",
+            "unnamed internal BM event/pseudo-attribute",
+        ])
+        self.assertEqual(sig.edges[0].left_flags_text, "suffix|wide")
+        self.assertEqual(sig.edges[0].left_predicate,
+                         "ends with crc32=0xf4202780 (26 wide chars)")
+        self.assertEqual(sig.edges[0].right_predicate, "any")
+        self.assertEqual(sig.edges[1].left_value_text, "SMS_THREAT")
+        self.assertEqual(sig.edges[1].right_value_text,
+                         "HackTool:Win32/CobaltStrike.I!sms")
+        self.assertEqual(sig.edges[2].right_value_text,
+                         "HackTool:Win64/CobaltStrike.I!sms")
+        self.assertIn("SMS_THREAT", sig.to_details()["decoded_summary"])
+
+    def test_enrich_legacy_details(self):
+        from defender2yara.defender.signature.sigtree import enrich_sigtree_details
+
+        legacy = {
+            "tree_kind": 2,
+            "edges": [{
+                "x": 0x00024040, "y": 0x0A214017, "z": 0x98E9D724, "w": 0x060419AD,
+                "left_flags": 0x40, "right_flags": 0x40,
+                "left_length": 10, "right_length": 33,
+                "left_value": 0x98E9D724, "right_value": 0x060419AD,
+                "attribute_id": 0x4017, "conditions": [],
+            }],
+        }
+        enriched = enrich_sigtree_details(legacy)
+        edge = enriched["edges"][0]
+        self.assertEqual(edge["attribute_name"], "BM_EngineInternal")
+        self.assertEqual(edge["left_value_text"], "SMS_THREAT")
+        self.assertEqual(edge["right_value_text"], "HackTool:Win32/CobaltStrike.I!sms")
+        self.assertIn("starts with", edge["left_predicate"])
 
 
 if __name__ == "__main__":

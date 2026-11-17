@@ -10,6 +10,9 @@ SIGTREE_SIGS = [
     "SIGNATURE_TYPE_SIGTREE_BM",
 ]
 
+# Numeric ids of the three sig-tree record types (0x40 / 0x41 / 0xb3).
+SIGTREE_TYPE_IDS = frozenset((0x40, 0x41, 0xB3))
+
 # Maximum length of the optional name at the start of the payload.
 MAX_NAME_LEN = 0x40
 
@@ -30,13 +33,286 @@ FLAG_INLINE = 0x10
 # patterns with flag 0x40) or that the condition is a hash compare.
 FLAG_WIDE = 0x40
 
-# Documented bits of the per-side flag byte.  The remaining bits are
-# comparison/action modifiers; their exact meaning is not confirmed, so they
-# are rendered as their raw value.
+# Documented bits of the per-side flag byte.
+#
+# ``FUN_1800d5880`` is the matcher that consumes the per-side flag byte.  It
+# treats the bits as follows (for a value-only condition):
+#
+#   0x01  suffix match   -- hash the last N characters (length - N offset)
+#   0x02  "any"          -- the matcher returns true before looking at the value
+#   0x04  exact          -- require live length == N, then hash the prefix
+#   0x08  case-sensitive -- use the non-folding hash / memcmp variant
+#   0x10  inline blob    -- a pattern follows in the record
+#   0x20  list / any-of  -- resolve an attribute record and test alternatives
+#   0x40  wide (UTF-16)  -- compare UTF-16LE text instead of bytes
+#   0x80  callback       -- invoke an engine callback before the comparison
+#
+# Without 0x01 and 0x04 a value-only condition is a *prefix* match of N
+# characters/bytes.  That is why the high byte of ``y`` is a "hash window"
+# length rather than necessarily the full string length.
 EDGE_FLAG_LABELS = {
+    0x01: "suffix",
+    0x02: "any",
+    0x04: "exact",
+    0x08: "case-sensitive",
     FLAG_INLINE: "inline pattern",
-    FLAG_WIDE: "wide / hash",
+    0x20: "list/any-of",
+    FLAG_WIDE: "wide",
+    0x80: "callback",
 }
+
+# ``tree_kind == 2`` (SIGTREE_BM) attribute ids are behaviour-monitoring event
+# ids.  The names below are the switch returned by ``FUN_1809f649c`` (the
+# engine's own BM event-to-name helper); the same ids are emitted by the BM
+# event paths, e.g. ``FUN_18052e7cc``.
+BM_EVENT_NAMES = {
+    0x4000: "BM_CreateFile",
+    0x4001: "BM_ChangeFile",
+    0x4002: "BM_RenameFile",
+    0x4003: "BM_DeleteFile",
+    0x4004: "BM_OpenFile",
+    0x4005: "BM_FileMetaData",
+    0x4006: "BM_RegistryKeyCreate",
+    0x4007: "BM_RegistryKeyRename",
+    0x4008: "BM_RegistryKeyDelete",
+    0x4009: "BM_RegistrySetValue",
+    0x400A: "BM_RegistryDeleteValue",
+    0x400B: "BM_NetworkConnect",
+    0x400C: "BM_NetworkDataSend",
+    0x400D: "BM_BootSectorChange",
+    0x400E: "BM_RemoteThreadCreate",
+    0x400F: "BM_RawWrite",
+    0x4010: "BM_ProcessCreate",
+    0x4011: "BM_ProcessStart",
+    0x4012: "BM_NetworkDetection",
+    0x4013: "BM_ArDetection",
+    0x4014: "BM_ModuleLoad",
+    0x4015: "BM_RegistryBlockSet",
+    0x4016: "BM_RegistryBlockDelete",
+    0x4017: "BM_EngineInternal",
+    0x4018: "BM_Etw_PsSetLoadImageNotifyRoutine",
+    0x4019: "BM_Etw_TerminateProcess",
+    0x401A: "BM_Etw_SetEventHook",
+    0x401B: "BM_Etw_RegisterInputDevices",
+    0x401C: "BM_Etw_NtAdjustPrivileges",
+    0x401D: "BM_Etw_SetThreadContext",
+    0x401E: "BM_Etw_WriteMemory",
+    0x401F: "BM_Etw_OpenProcess",
+    0x4020: "BM_Etw_OpenThread",
+    0x4021: "BM_Etw_RegisterLastShutdown",
+    0x4022: "BM_Etw_RegisterShutdown",
+    0x4023: "BM_Etw_CreateLink",
+    0x4024: "BM_RegistryRestore",
+    0x4025: "BM_RegistryReplace",
+    0x4026: "BM_RegistryBlockRename",
+    0x4027: "BM_RegistryBlockRestore",
+    0x4028: "BM_RegistryBlockReplace",
+    0x4029: "BM_VolumeMount",
+    0x402A: "BM_Desktop",
+    0x402B: "BM_OpenProcess",
+    0x402C: "BM_BlockOpenProcess",
+    0x402D: "BM_RegistryBlockCreate",
+    0x402E: "BM_Etw_CodeInjection",
+    0x402F: "BM_Etw_BlockExploit",
+    0x4030: "BM_Etw_SetWindowsHook",
+    0x4031: "BM_Etw_GetAsyncKeyState",
+    0x4032: "BM_CreateFolder",
+    0x4033: "BM_Etw_AllocVmLocal",
+    0x4034: "BM_Etw_DirEnum",
+    0x4035: "BM_Etw_ClearLog",
+    0x4036: "BM_Etw_WMIActivityNew",
+    0x4037: "BM_Etw_WMIExecMethod",
+    0x4038: "BM_EnumFolder",
+    0x4039: "BM_RenameFolder",
+    0x4048: "BM_HardLinkFile",
+    0x4049: "BM_CopyFile",
+    0x404D: "BM_Etw_CredReadCredentials",
+    0x404E: "BM_Etw_CredEnumerate",
+    0x404F: "BM_Etw_CredReadDomainCredentials",
+    0x4050: "BM_Etw_CredFindBestCredential",
+    0x4051: "BM_Etw_CredReadByTokenHandle",
+    0x4052: "BM_Etw_CredBackupCredentials",
+    0x4053: "BM_Etw_VaultFindCredentials",
+    0x4054: "BM_Etw_VaultEnumerateCredentials",
+    0x4055: "BM_Etw_VaultGetUniqueCredential",
+    0x4056: "BM_Taint",
+    0x4057: "BM_Amsi_Scan",
+    0x4058: "BM_Amsi_Match",
+    0x4060: "BM_Etw_LDAPSearch",
+    0x4061: "BM_Etw_BITSCreate",
+    0x4062: "BM_Etw_ScheduledTaskCreate",
+    0x4063: "BM_Etw_ScheduledTaskUpdate",
+    0x4064: "BM_Etw_LogonSuccess",
+    0x4065: "BM_Etw_LogonFailure",
+    0x4066: "BM_Etw_UserAccountChanged",
+    0x4067: "BM_Etw_AccountPasswordChanged",
+    0x4068: "BM_Etw_AccountPasswordReset",
+    0x4069: "BM_Etw_HiveHistoryClear",
+    0x406A: "BM_OriginalFileName",
+    0x406B: "BM_SignatureTrigger",
+    0x406C: "BM_Etw_UserAccountCreated",
+    0x406D: "BM_Etw_ExploitProtection",
+    0x406E: "BM_Network_PortOpen",
+    0x406F: "BM_Network_Volume",
+    0x4070: "BM_Etw_SuspendThread",
+    0x4071: "BM_Etw_ResumeThread",
+    0x4072: "BM_Etw_SuspendProcess",
+    0x4073: "BM_Etw_ResumeProcess",
+    0x4074: "BM_Etw_LoadDriver",
+    0x4075: "BM_Etw_UnloadDriver",
+    0x4076: "BM_Etw_LoadDevice",
+    0x4077: "BM_Etw_UnloadDevice",
+    0x4079: "BM_Etw_ProtectVmLocal",
+    0x4080: "BM_Etw_ServiceStop",
+    0x4081: "BM_Etw_ServiceChangeStartType",
+    0x4082: "BM_Etw_ServiceChangeBinaryPath",
+    0x4083: "BM_Etw_ServiceChangeAccountInfo",
+    0x4084: "BM_Etw_ServiceHostStarted",
+    0x4085: "BM_Etw_ServiceStarted",
+    0x4086: "BM_Network_Failure",
+    0x4089: "BM_Etw_ReadVmRemote",
+    0x408A: "BM_Etw_V2CodeInjection",
+    0x408B: "BM_Etw_MapViewLocal",
+    0x408C: "BM_Network_ConnectionOpen",
+    0x408D: "BM_FileSequentialRead",
+    0x408E: "BM_Parent",
+    0x408F: "BM_NetworkSocket",
+    0x4090: "BM_NetworkSetSocketOption",
+    0x4091: "BM_ChangePermissions",
+    0x4092: "BM_RegistrySetValue_From",
+    0x4093: "BM_Etw_DangerousSyscall",
+    0x4094: "BM_Etw_CLRModuleLoad",
+    0x4095: "BM_Etw_CLRAssemblyLoad",
+    0x4096: "BM_RegistryTpState",
+    0x4097: "BM_Etw_ReadVmRemoteAgg",
+    0x4098: "BM_Etw_WMICreateProcess",
+    0x4099: "BM_ChangeOwner",
+    0x409A: "BM_CloudResponse",
+    0x409B: "BM_DeleteXattr",
+    0x409C: "BM_SetFileUtimes",
+    0x409D: "BM_SetFileFlags",
+    0x409E: "BM_ForkCount",
+    0x409F: "BM_AiDetection",
+    0x40A0: "BM_Etw_AmsiInitFailed",
+    0x40A1: "BM_DupFileDescriptor",
+    0x40A2: "BM_MemoryMap",
+    0x40A3: "BM_MemoryProtect",
+    0x40A4: "BM_ProcessControl",
+    0x40A5: "BM_Signer",
+    0x40A6: "BM_ULS",
+    0x40A7: "BM_Etw_ClipWrite",
+    0x40A8: "BM_LoginSuccess",
+    0x40A9: "BM_LoginFailure",
+    0x40AA: "BM_GatekeeperOverride",
+    0x40AB: "BM_TCC_Modify",
+    0x40AC: "BM_XP_MalwareDetected",
+    0x40AD: "BM_ScreensharingAttach",
+    0x40AE: "BM_CS_Invalidated",
+    0x40B0: "BM_PipeCreate",
+    0x40B1: "BM_PipeOpen",
+}
+
+# Attribute ids that are not BM event ids.
+SPECIAL_ATTRIBUTE_NAMES = {
+    0xF000: "LuaCallSigattrBM (Lua sigattr callback)",
+    0x40FF: "unnamed internal BM event/pseudo-attribute",
+}
+
+# A value-only sigtree side stores only a CRC32 of the attribute text.  The
+# engine computes it over lowercased text with init 0xffffffff and no final
+# XOR (``FUN_1806765c0`` narrow, ``FUN_180676604`` wide, called from
+# ``FUN_1802371d0``).  The strings below were confirmed by matching database
+# values; they turn the otherwise opaque ``z``/``w`` words into readable text.
+# The key is ``(crc32, length)`` where length is in characters for wide values.
+KNOWN_VALUE_STRINGS = {
+    # BM_EngineInternal event tags (first parameter).
+    (0x98E9D724, 10): "SMS_THREAT",
+    (0x67F1CC42, 11): "BM_FILEOPEN",
+    (0x6BF27EA1, 21): "BM_BLOCKPROCESSCREATE",
+    (0x6DFB367B, 8): "CmdLowfi",
+    (0x35C89E67, 9): "INTEGRITY",
+    (0xF9AB6713, 9): "FILE_COPY",
+    (0xC54CF93F, 10): "BM_STARTUP",
+    (0xCA280C53, 10): "APIHOOKWOW",
+    (0x2A045D89, 7): "SEVILLE",
+    (0x40235293, 11): "REMEDIATION",
+    (0x1C8FE211, 9): "TELEMETRY",
+    (0x36A43164, 11): "FOLDERGUARD",
+    (0x16464D4E, 21): "FolderGuardTargetDisk",
+    (0x1E9A080B, 20): "ConnectionCacheEntry",
+    (0x9951F5A3, 15): "DeferredActions",
+    # Common process-path suffixes (BM_ProcessStart / BM_ProcessCreate).
+    (0xC7F18C20, 15): "\\powershell.exe",
+    (0xE0B63504, 8): "\\cmd.exe",
+    (0x7072D606, 13): "\\rundll32.exe",
+    (0xFE3A6F6A, 12): "\\wscript.exe",
+    (0x0B6CB62B, 12): "\\cscript.exe",
+    (0x14D93181, 12): "\\svchost.exe",
+    (0x25BE5A07, 13): "\\certutil.exe",
+    (0x5109CA91, 13): "\\regsvr32.exe",
+    (0xB0C5EF3C, 10): "\\mshta.exe",
+    (0xDE038D24, 9): "mshta.exe",
+    (0x8464C128, 9): "\\wmic.exe",
+    (0x2F6A201E, 11): "\\psexec.exe",
+    (0x77D328EF, 11): "\\regasm.exe",
+    (0x33AE3E51, 10): "\\bitsadmin",
+    (0x487AC9E3, 7): "\\sc.exe",
+    (0x76EEB249, 8): "\\net.exe",
+    (0xF63025E3, 8): "\\reg.exe",
+    (0x6F188314, 9): "\\curl.exe",
+    # Confirmed SMS threat-chain values (Sigma: 0x4017 + SMS_THREAT).
+    (0x060419AD, 33): "HackTool:Win32/CobaltStrike.I!sms",
+    (0x1B31E528, 33): "HackTool:Win64/CobaltStrike.I!sms",
+}
+
+
+def bm_event_name(attribute_id: int, tree_kind: int = None) -> str:
+    """Return the engine/BM name for a sig-tree attribute id."""
+    if attribute_id in SPECIAL_ATTRIBUTE_NAMES:
+        return SPECIAL_ATTRIBUTE_NAMES[attribute_id]
+    if tree_kind == 2:
+        return BM_EVENT_NAMES.get(attribute_id, f"BM_event_0x{attribute_id:04x}")
+    return f"0x{attribute_id:04x}"
+
+
+def describe_value(value: int, length: int, flags: int) -> str:
+    """Render the expected value word of a value-only condition."""
+    known = KNOWN_VALUE_STRINGS.get((value, length))
+    if known is not None:
+        return repr(known)
+    kind = "wide chars" if flags & FLAG_WIDE else "bytes"
+    return f"crc32=0x{value:08x} ({length} {kind})"
+
+
+def describe_side(flags: int, length: int, value: int,
+                  condition=None, written=None) -> str:
+    """Human-readable predicate for one side of a sig-tree edge."""
+    if flags & 0x02 and condition is None:
+        return "any"
+    if condition is not None:
+        if getattr(condition, "is_pattern", False):
+            text = condition.text
+            if flags & 0x10:
+                return f"wide pattern {text!r}" if flags & FLAG_WIDE else f"pattern {text!r}"
+            return f"pattern {text!r}"
+        if getattr(condition, "is_hash", False):
+            return f"{condition.kind} == {condition.text}"
+        return condition.text
+
+    if value is None:
+        return f"conditional ({length})"
+    if flags & 0x100:
+        return f"numeric == 0x{value:08x}"
+
+    if flags & 0x01:
+        operator = "ends with"
+    elif flags & 0x04:
+        operator = "equals"
+    else:
+        operator = "starts with"
+
+    text = describe_value(value, length, flags)
+    return f"{operator} {text}"
 
 # ``tree_kind`` -> attribute id namespace observed in the rules.
 # The engine selects a per-kind sigattr notifier context
@@ -44,7 +320,7 @@ EDGE_FLAG_LABELS = {
 TREE_KIND_ATTRIBUTE_NAMESPACES = {
     0: "0x51xx",
     1: "0x50xx",
-    2: "behaviour-monitoring events",
+    2: "behaviour-monitoring event ids (0x4000-0x40b1)",
     3: "0x30xx (file/PE metadata)",
     4: "0x52xx",
     5: "0x60xx",
@@ -176,7 +452,7 @@ class SigTreeEdge:
 
     def __init__(self, x: int, y: int, z: int, w: int,
                  extra: int = 0, extra2: int = 0,
-                 conditions: list = None) -> None:
+                 conditions: list = None, tree_kind: int = None) -> None:
         self.x = x
         self.y = y
         self.z = z
@@ -184,6 +460,7 @@ class SigTreeEdge:
         self.extra = extra
         self.extra2 = extra2
         self.conditions = conditions or []
+        self.tree_kind = tree_kind
 
     def to_details(self) -> dict:
         return {
@@ -199,10 +476,18 @@ class SigTreeEdge:
             "right_length": self.right_length,
             "attribute_id": self.attribute_id,
             "attribute_id_hex": f"0x{self.attribute_id:04x}",
+            "attribute_name": self.attribute_name,
+            "control_flags": self.control_flags,
+            "control_flags_hex": f"0x{self.control_flags:04x}",
             "left_flags_text": edge_flags_text(self.left_flags),
             "right_flags_text": edge_flags_text(self.right_flags),
             "left_value": self.left_value,
             "right_value": self.right_value,
+            "left_value_text": self.left_value_text,
+            "right_value_text": self.right_value_text,
+            "left_predicate": self.left_predicate,
+            "right_predicate": self.right_predicate,
+            "summary": self.summary,
             "conditions": [condition.to_details() for condition in self.conditions],
         }
 
@@ -237,6 +522,54 @@ class SigTreeEdge:
         if self.condition("right") is not None:
             return None
         return self.w
+
+    @property
+    def control_flags(self) -> int:
+        """Upper 16 bits of ``x``: per-node control bits (mostly undecoded)."""
+        return (self.x >> 16) & 0xFFFF
+
+    @property
+    def attribute_name(self) -> str:
+        """Engine name for :attr:`attribute_id` (BM event names for kind 2)."""
+        return bm_event_name(self.attribute_id, self.tree_kind)
+
+    @property
+    def left_value_text(self):
+        """Known plain text for the left value word, or ``None``."""
+        if self.condition("left") is not None:
+            return None
+        return KNOWN_VALUE_STRINGS.get((self.z, self.left_length))
+
+    @property
+    def right_value_text(self):
+        """Known plain text for the right value word, or ``None``."""
+        if self.condition("right") is not None:
+            return None
+        return KNOWN_VALUE_STRINGS.get((self.w, self.right_length))
+
+    @property
+    def left_predicate(self) -> str:
+        """Readable predicate for the left side of the edge."""
+        return describe_side(
+            self.left_flags, self.left_length, self.left_value,
+            self.condition("left"),
+        )
+
+    @property
+    def right_predicate(self) -> str:
+        """Readable predicate for the right side of the edge."""
+        return describe_side(
+            self.right_flags, self.right_length, self.right_value,
+            self.condition("right"),
+        )
+
+    @property
+    def summary(self) -> str:
+        """One-line decoded description of the edge."""
+        return (
+            f"{self.attribute_name}: left {self.left_predicate}; "
+            f"right {self.right_predicate}"
+        )
 
     @property
     def left_flags(self) -> int:
@@ -398,7 +731,7 @@ class SigTreeSig(BaseSig):
         )
 
         self.edges.append(
-            SigTreeEdge(x, y, z, w, extra, extra2, conditions)
+            SigTreeEdge(x, y, z, w, extra, extra2, conditions, self.tree_kind)
         )
         return pos
 
@@ -446,11 +779,13 @@ class SigTreeSig(BaseSig):
             "tree_kind": self.tree_kind,
             "attribute_namespace": self.attribute_namespace,
             "attribute_ids": self.attribute_ids,
+            "attribute_names": self.attribute_names,
             "name": self.name,
             "meta": self.meta,
             "is_behavior": self.is_behavior,
             "has_inline_conditions": self.has_inline_conditions,
             "description": self.describe(),
+            "decoded_summary": " | ".join(edge.summary for edge in self.edges),
             "edges": [edge.to_details() for edge in self.edges],
         }
 
@@ -471,6 +806,11 @@ class SigTreeSig(BaseSig):
             if edge.attribute_id not in seen:
                 seen.append(edge.attribute_id)
         return seen
+
+    @property
+    def attribute_names(self) -> list:
+        """Engine names for :attr:`attribute_ids`, in first-use order."""
+        return [bm_event_name(value, self.tree_kind) for value in self.attribute_ids]
 
     @property
     def has_inline_conditions(self) -> bool:
@@ -497,4 +837,84 @@ class SigTreeSig(BaseSig):
         if self.name:
             text += f" name={self.name!r}"
         return text
+
+
+class _ConditionView:
+    """Adapter that lets dict details use the same predicates as objects."""
+
+    def __init__(self, data: dict) -> None:
+        self.data = data
+        self.kind = data.get("kind", "")
+        self.text = data.get("text") or data.get("data_hex", "")
+        self.flags = data.get("flags", 0)
+
+    @property
+    def is_pattern(self) -> bool:
+        return self.kind == "pattern"
+
+    @property
+    def is_hash(self) -> bool:
+        return self.kind in ("md5", "sha1", "sha256")
+
+
+def enrich_sigtree_details(details: dict) -> dict:
+    """Add decoded event names / predicates to stored details.
+
+    The shipped database predates the BM event-name and flag decoding, so the
+    HTML/API layer calls this on read.  It is idempotent for freshly parsed
+    records (``SigTreeSig.to_details`` already contains the same fields).
+    """
+    if not isinstance(details, dict) or not details.get("edges"):
+        return details
+
+    details = dict(details)
+    kind = details.get("tree_kind")
+    details["attribute_namespace"] = TREE_KIND_ATTRIBUTE_NAMESPACES.get(kind, "unknown")
+    edges = []
+    names = []
+    for raw_edge in details["edges"]:
+        edge = dict(raw_edge)
+        attribute_id = edge.get("attribute_id")
+        if attribute_id is None:
+            attribute_id = int(edge.get("y", 0)) & 0xFFFF
+            edge["attribute_id"] = attribute_id
+        name = bm_event_name(attribute_id, kind)
+        edge["attribute_id_hex"] = f"0x{attribute_id:04x}"
+        edge["attribute_name"] = name
+        if name not in names:
+            names.append(name)
+
+        control = (int(edge.get("x", 0)) >> 16) & 0xFFFF
+        edge["control_flags"] = control
+        edge["control_flags_hex"] = f"0x{control:04x}"
+
+        conditions = edge.get("conditions") or []
+        by_side = {cond.get("side"): _ConditionView(cond) for cond in conditions}
+        for side in ("left", "right"):
+            flags = int(edge.get(f"{side}_flags", 0))
+            length = int(edge.get(f"{side}_length", 0))
+            value = edge.get(f"{side}_value")
+            if value is None:
+                value = edge.get("z" if side == "left" else "w", 0)
+                edge[f"{side}_value"] = value
+            condition = by_side.get(side)
+            if condition is None:
+                known = KNOWN_VALUE_STRINGS.get((value, length))
+            else:
+                known = None
+            edge[f"{side}_flags_text"] = edge_flags_text(flags)
+            edge[f"{side}_value_text"] = known
+            edge[f"{side}_predicate"] = describe_side(
+                flags, length, value, condition,
+            )
+        edge["summary"] = (
+            f"{name}: left {edge['left_predicate']}; "
+            f"right {edge['right_predicate']}"
+        )
+        edges.append(edge)
+
+    details["edges"] = edges
+    details["attribute_names"] = names
+    details["decoded_summary"] = " | ".join(edge["summary"] for edge in edges)
+    return details
 

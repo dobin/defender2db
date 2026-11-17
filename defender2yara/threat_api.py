@@ -4,6 +4,7 @@ from sqlalchemy import select
 
 from defender2yara.defender.constant import SIG_TYPES
 from defender2yara.defender.dbthreat import DEFAULT_DATABASE, DbThreat, ImportInfo, RawRecord, Signature, read_session
+from defender2yara.defender.signature.sigtree import SIGTREE_TYPE_IDS, enrich_sigtree_details
 from defender2yara.defender.threat import SEVERITY_MAP
 
 
@@ -21,12 +22,15 @@ def search_threats(threat_name: str, database=DEFAULT_DATABASE) -> list[dict]:
 
 
 def signature_details(row, raw_available):
+    details = row.details
+    if row.type_id in SIGTREE_TYPE_IDS:
+        details = enrich_sigtree_details(details)
     return {
         'id': row.id, 'source_id': row.source_id, 'threat_id': row.threat_id,
         'offset': row.offset, 'type_id': row.type_id, 'type': SIG_TYPES[row.type_id],
         'size': row.payload_size, 'header_size': row.header_size, 'record_size': row.record_size,
         'role': row.role, 'decode_status': row.decode_status,
-        'details_version': row.details_version, 'details': row.details,
+        'details_version': row.details_version, 'details': details,
         'raw_available': raw_available,
     }
 

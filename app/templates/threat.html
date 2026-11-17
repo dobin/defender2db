@@ -56,7 +56,7 @@
           <a href="{{ url_for('views.api_get_signature', local_id=sig.id) }}">Signature metadata</a>
           {% if sig.raw_available %}
           &#183; <a href="{{ url_for('views.api_get_raw_record', local_id=sig.id) }}">Raw TLV</a>
-          {% else %}<p>Raw record unavailable (not captured).</p>{% endif %}
+          {% endif %}
         </article>
         {% endfor %}
       </section>
