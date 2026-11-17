@@ -5,7 +5,8 @@ from defender2yara.defender.signature.hstr import DexHStrExtSig, HStrExtSig
 from defender2yara.defender.signature.aggregator import AaAggregatorExSig
 from defender2yara.defender.signature.versioncheck import VersionCheckSig
 from defender2yara.defender.signature.sigtree import SigTreeSig
-from defender2yara.defender.signature.nid import NidSig
+from defender2yara.defender.signature.nid import Nid64Sig, NidSig
+from defender2yara.defender.signature.snid import SnidSig
 from defender2yara.defender.signature.static import StaticSig
 import logging
 import struct
@@ -52,6 +53,7 @@ class NiceThreat:
         self.version_checks: list[VersionCheckSig] = []
         self.behavior_signatures: list[SigTreeSig] = []
         self.nid_signatures: list[NidSig] = []
+        self.snid_signatures: list[SnidSig] = []
         self.static_signatures: list[StaticSig] = []
         self.pehstr_signatures: list[HStrExtSig] = []
         self.revoked_certs: list[str] = []
@@ -63,7 +65,8 @@ class NiceThreat:
             if sig.sig_type not in {
                 "SIGNATURE_TYPE_DEXHSTR_EXT", "SIGNATURE_TYPE_AAGGREGATOREX",
                 "SIGNATURE_TYPE_VERSIONCHECK", "SIGNATURE_TYPE_SIGTREE_BM",
-                "SIGNATURE_TYPE_NID", "SIGNATURE_TYPE_PEHSTR_EXT",
+                "SIGNATURE_TYPE_NID", "SIGNATURE_TYPE_NID64",
+                "SIGNATURE_TYPE_SNID", "SIGNATURE_TYPE_PEHSTR_EXT",
                 "SIGNATURE_TYPE_STATIC",
             }:
                 continue
@@ -80,6 +83,10 @@ class NiceThreat:
                     self.behavior_signatures.append(sig if not reparse and isinstance(sig, SigTreeSig) else SigTreeSig(data))
                 elif sig.sig_type == "SIGNATURE_TYPE_NID":
                     self.nid_signatures.append(sig if not reparse and isinstance(sig, NidSig) else NidSig(data))
+                elif sig.sig_type == "SIGNATURE_TYPE_NID64":
+                    self.nid_signatures.append(sig if not reparse and isinstance(sig, Nid64Sig) else Nid64Sig(data))
+                elif sig.sig_type == "SIGNATURE_TYPE_SNID":
+                    self.snid_signatures.append(sig if not reparse and isinstance(sig, SnidSig) else SnidSig(data))
                 elif sig.sig_type == "SIGNATURE_TYPE_PEHSTR_EXT":
                     self.pehstr_signatures.append(sig if not reparse and isinstance(sig, HStrExtSig) else HStrExtSig(data))
                 elif sig.sig_type == "SIGNATURE_TYPE_STATIC":
@@ -91,7 +98,11 @@ class NiceThreat:
 
     def __setstate__(self, state: dict[str, object]) -> None:
         self.__dict__.update(state)
-        if "dexhstr_signatures" not in state or "static_signatures" not in state:
+        if (
+            "dexhstr_signatures" not in state
+            or "static_signatures" not in state
+            or "snid_signatures" not in state
+        ):
             self._populate_signature_data(reparse=True)
 
     def __str__(self) -> str:

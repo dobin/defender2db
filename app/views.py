@@ -39,7 +39,8 @@ def get_threat():
     decoded_signatures = (
         threat.dexhstr_signatures + threat.aggregator_signatures
         + threat.version_checks + threat.behavior_signatures
-        + threat.nid_signatures + threat.pehstr_signatures
+        + threat.nid_signatures + threat.snid_signatures
+        + threat.pehstr_signatures
         + threat.static_signatures
     )
     decoded_records = {(sig.sig_type, sig.sig_data) for sig in decoded_signatures}

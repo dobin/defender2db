@@ -2,6 +2,7 @@ import unittest
 
 from defender2yara.defender.signature.hstr import HStrExtSig
 from defender2yara.defender.signature.nid import Nid64Sig, NidSig
+from defender2yara.defender.signature.snid import SnidSig
 from defender2yara.defender.signature.sigtree import (
     SigTreeSig,
     decode_tree_pattern,
@@ -39,12 +40,37 @@ class NidTests(unittest.TestCase):
         self.assertEqual(sig.record_kind, 0x7B)
         self.assertFalse(sig.has_name)
 
+    def test_nid64_packed_record_id(self):
+        # The 64-bit key uses the engine's packed id layout:
+        # crc32 | signature type << 32 | payload size << 40.
+        sig = Nid64Sig(tlv(0xCE, bytes.fromhex("1f7698f378b500007b")))
+        self.assertEqual(sig.packed_crc32, 0xF398761F)
+        self.assertEqual(sig.packed_sig_type_id, 0x78)
+        self.assertEqual(sig.packed_sig_type, "SIGNATURE_TYPE_PEHSTR_EXT")
+        self.assertEqual(sig.packed_size, 0xB5)
+        self.assertTrue(sig.has_record_id_layout)
+        self.assertEqual(sig.key_bytes, bytes.fromhex("1f7698f378b50000"))
+
+    def test_nid64_non_record_id_key(self):
+        # !#Allow:GoLang/StandardFunc: the key is a 64-bit hash/id, not a packed
+        # record id - the embedded "type" byte is coincidental.
+        sig = Nid64Sig(tlv(0xCE, bytes.fromhex("01769553ea418d47e4")))
+        self.assertEqual(sig.record_key, 0x478D41EA53957601)
+        self.assertEqual(sig.record_kind, 0xE4)
+        self.assertEqual(sig.packed_sig_type_id, 0xEA)
+        self.assertEqual(sig.packed_size, 0x478D41)
+        self.assertFalse(sig.has_record_id_layout)
+        self.assertEqual(sig.kind_label, "MDBHSTR_EXT names (Go functions)")
+
     def test_nid64_named_record(self):
         sig = Nid64Sig(tlv(0xCE, bytes.fromhex(
             "1c201eda7017000084234869676854727573745075626c69736865725f564c4300")))
         self.assertEqual(sig.record_key, 0x00001770DA1E201C)
         self.assertEqual(sig.record_kind, 0x84)
         self.assertEqual(sig.record_name, "#HighTrustPublisher_VLC")
+        self.assertEqual(sig.packed_sig_type, "SIGNATURE_TYPE_TRUSTED_PUBLISHER")
+        self.assertEqual(sig.packed_size, 0x17)
+        self.assertEqual(sig.kind_label, "high-trust publisher names")
 
     def test_kind_label_and_purpose(self):
         # Trojan:Linux/Metasploit - reference-only record in the 0x77d1 id block
@@ -80,6 +106,32 @@ class NidTests(unittest.TestCase):
         self.assertEqual(sig.record_key, 0x53)
         self.assertTrue(sig.is_legacy_id)
         self.assertEqual(sig.id_block, 0)
+
+
+class SnidDecodeTests(unittest.TestCase):
+    def test_named_reference_is_a_group(self):
+        # !InfrastructureShared: every IL2_PATTERN reference is tagged with
+        # its group name; the key is the record-store key, not the group hash.
+        sig = SnidSig(tlv(0x7E, bytes.fromhex(
+            "1a76c7c599d080d6030a3405fd928748162b1abed621"
+            "23414747523a56696272616e74476f6e64616c6100")))
+        self.assertEqual(sig.reference_type_id, 0xD6)
+        self.assertEqual(sig.reference_type, "SIGNATURE_TYPE_EXPLICITRESOURCE")
+        self.assertEqual(sig.group_name, "!#AGGR:VibrantGondala")
+        self.assertTrue(sig.is_named)
+        self.assertEqual(sig.key_hex, "1a76c7c599d080d6030a3405fd928748162b1abe")
+        self.assertEqual(len(sig.key_core), 20)
+        self.assertFalse(sig.key_is_padded)
+
+    def test_padded_16_byte_key(self):
+        # LOCALHASH references use a 16-byte key padded with four zero bytes.
+        sig = SnidSig(tlv(0x7E, bytes.fromhex(
+            "119480bce5833ad22fb789f15497cb630000000062")))
+        self.assertEqual(sig.reference_type, "SIGNATURE_TYPE_LOCALHASH")
+        self.assertEqual(len(sig.key_core), 16)
+        self.assertTrue(sig.key_is_padded)
+        self.assertFalse(sig.is_named)
+        self.assertIsNone(sig.group_name)
 
 
 class SigTreeTests(unittest.TestCase):
@@ -207,6 +259,9 @@ class DispatchTests(unittest.TestCase):
         data = (
             tlv(0x55, bytes.fromhex("905dd17711"))
             + tlv(0xCE, bytes.fromhex("1f7698f378b500007b"))
+            + tlv(0x7E, bytes.fromhex(
+                "1a76c7c599d080d6030a3405fd928748162b1abed621"
+                "23414747523a56696272616e74476f6e64616c6100"))
             + tlv(0xB3, bytes.fromhex(
                 "0200010200024102000040000d86cb0e4000000000024102000140000d86cb0e"
                 "4000000000"))
@@ -215,9 +270,10 @@ class DispatchTests(unittest.TestCase):
         records = Vdm.parse_database(data)
         self.assertIsInstance(records[0], NidSig)
         self.assertIsInstance(records[1], Nid64Sig)
-        self.assertIsInstance(records[2], SigTreeSig)
-        self.assertIsInstance(records[3], HStrExtSig)
-        self.assertEqual(records[2].sig_type, "SIGNATURE_TYPE_SIGTREE_BM")
+        self.assertIsInstance(records[2], SnidSig)
+        self.assertIsInstance(records[3], SigTreeSig)
+        self.assertIsInstance(records[4], HStrExtSig)
+        self.assertEqual(records[3].sig_type, "SIGNATURE_TYPE_SIGTREE_BM")
 
 
 if __name__ == "__main__":

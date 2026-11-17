@@ -1,6 +1,9 @@
 # Decoding NID, SIGTREE_BM and PEHSTR_EXT
 
 Follow-up to `cache/sig_type_usage.md` and `cache/sig_decode_next3.md`.
+SNID and NID64 have a dedicated follow-up in
+`doc/sig_decode_snid_nid64.md`; the NID64 details below are summarised there in
+more depth.
 
 Build analysed: `cache/mpengine.dll`, engine `1.1.26100.4`, signature `1.463.330.0`.
 Addresses are x64 VAs in the Ghidra project binary `/mpengine.dll`.
@@ -79,10 +82,24 @@ traffic types it happens to equal `crc32(name)` (the `#<guid>`/`#TEL` records,
 1,631 cases), which is consistent with the id namespace being CRC-derived for
 those record classes.
 
+### NID64 key = packed record id
+
+NID64 uses the same three fields with an 8-byte key.  For record-backed
+namespaces that key is the engine's packed record id:
+`crc32(payload) | sig_type << 32 | size << 40` (the formula is visible in the
+NID lookup `FUN_18015c56c` and in the STATIC builder).  In the shipped database
+5,141 of 12,109 NID64 keys resolve exactly to a record in the merged VDM stream.
+The table is otherwise the NID table design: 24-byte entries
+`{u64 key, u8 kind, u32 name-id, u32 extra}`, lookup by `(key, kind)`, and the
+same optional definition-group name.  See `doc/sig_decode_snid_nid64.md` §2.
+
 ### Decoded fields (`NidSig`)
 
 `record_key`, `record_kind`, `record_name`, `record_name_raw`, `has_name`,
 `trailing`, `describe()`.
+
+`Nid64Sig` adds `packed_crc32`, `packed_sig_type(_id)`, `packed_size`,
+`has_record_id_layout`, `key_bytes`, and NID64-specific `kind_label`s.
 
 ---
 

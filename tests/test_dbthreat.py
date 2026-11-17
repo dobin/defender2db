@@ -32,6 +32,10 @@ def sample_threat(parsed=True):
         tlv(0x7A, struct.pack('<II', 0x26, 17763)),
         tlv(0xB3, bytes.fromhex('0200010200024102000040000d86cb0e4000000000024102000140000d86cb0e4000000000')),
         tlv(0x55, bytes.fromhex('430fd0117c') + b'<script>alert(1)</script>\x00'),
+        tlv(0xCE, bytes.fromhex('1c201eda7017000084') + b'#HighTrustPublisher_VLC\x00'),
+        tlv(0x7E, bytes.fromhex(
+            '1a76c7c599d080d6030a3405fd928748162b1abed621'
+            '23414747523a56696272616e74476f6e64616c6100')),
         tlv(0x78, bytes.fromhex('0100010001000001000401583535350000')),
     ]
     for data in records:
@@ -47,30 +51,37 @@ class NiceThreatTests(unittest.TestCase):
         threat.yara_rules = ['rule example { condition: true }']
         restored = pickle.loads(pickle.dumps(threat))
         for field in ('dexhstr_signatures', 'aggregator_signatures', 'version_checks',
-                      'behavior_signatures', 'nid_signatures', 'pehstr_signatures'):
+                      'behavior_signatures', 'snid_signatures',
+                      'pehstr_signatures'):
             self.assertEqual(len(getattr(restored, field)), 1)
+        self.assertEqual(len(restored.nid_signatures), 2)
         self.assertIs(threat.dexhstr_signatures[0], source.signatures[0])
         self.assertEqual(restored.aggregator_signatures[0].expression, 'HSTR:Example&SIGATTR:Example')
         self.assertEqual(restored.version_checks[0].describe(), 'os_build < 0x4563')
+        self.assertEqual(restored.snid_signatures[0].group_name, '!#AGGR:VibrantGondala')
         self.assertEqual(restored.lua_scripts, threat.lua_scripts)
         self.assertEqual(restored.yara_rules, threat.yara_rules)
-        self.assertEqual(len(restored.signatures), 6)
+        self.assertEqual(len(restored.signatures), 8)
 
     def test_legacy_pickle_rebuilds_typed_collections(self):
         threat = NiceThreat(sample_threat(parsed=False))
         for field in ('dexhstr_signatures', 'aggregator_signatures', 'version_checks',
-                      'behavior_signatures', 'nid_signatures', 'static_signatures',
+                      'behavior_signatures', 'nid_signatures', 'snid_signatures',
+                      'static_signatures',
                       'pehstr_signatures', 'revoked_certs'):
             delattr(threat, field)
         restored = pickle.loads(pickle.dumps(threat))
         self.assertEqual(restored.pehstr_signatures[0].subrules[0].rule_bytes, b'X555')
         self.assertEqual(restored.behavior_signatures[0].edge_count, 2)
+        self.assertEqual(restored.snid_signatures[0].reference_type, 'SIGNATURE_TYPE_EXPLICITRESOURCE')
+        self.assertEqual(restored.nid_signatures[1].kind_label, 'high-trust publisher names')
 
     def test_legacy_parser_instances_are_refreshed(self):
         threat = NiceThreat(sample_threat())
         del threat.pehstr_signatures[0].name
         for field in ('dexhstr_signatures', 'aggregator_signatures', 'version_checks',
-                      'behavior_signatures', 'nid_signatures', 'static_signatures',
+                      'behavior_signatures', 'nid_signatures', 'snid_signatures',
+                      'static_signatures',
                       'pehstr_signatures', 'revoked_certs'):
             delattr(threat, field)
         restored = pickle.loads(pickle.dumps(threat))
@@ -89,7 +100,7 @@ class NiceThreatTests(unittest.TestCase):
             threat = NiceThreat(source)
             threat.lua_scripts = [b'print("example")']
             threat.yara_rules = ['rule example { condition: true }']
-            DbThreat.create(name=threat.name, sigs='test', sigcount=7, threatObject=pickle.dumps(threat))
+            DbThreat.create(name=threat.name, sigs='test', sigcount=9, threatObject=pickle.dumps(threat))
             response = app.test_client().get('/threat', query_string={'name': threat.name})
             self.assertEqual(response.status_code, 200)
             html = response.get_data(as_text=True)
@@ -100,6 +111,9 @@ class NiceThreatTests(unittest.TestCase):
                          'Partial CRC 1', '00000001', 'static-signature-table',
                          '0x0001', 'MD5 (0x0000) + prefix match (0x0001)',
                          'CRC32 of the first 4 KiB',
+                         'NID / NID64 records', 'SNID references',
+                         'Packed record id', 'SIGNATURE_TYPE_EXPLICITRESOURCE',
+                         '!#AGGR:VibrantGondala',
                          '<th>Key</th>', '<th>Value</th>', '<th>Notes</th>'):
                 self.assertIn(text, html)
             self.assertIn('&lt;script&gt;', html)
@@ -109,14 +123,14 @@ class NiceThreatTests(unittest.TestCase):
             self.assertNotIn('threat-counts-table', html)
             self.assertIn('Signature counts', html)
             for sig_type in ('AAGGREGATOREX', 'DEXHSTR_EXT', 'VERSIONCHECK',
-                             'SIGTREE_BM', 'NID', 'PEHSTR_EXT'):
+                             'SIGTREE_BM', 'NID', 'NID64', 'SNID', 'PEHSTR_EXT'):
                 self.assertIn(sig_type, html)
             self.assertIn('Aggregator expressions', html)
             self.assertIn('<strong>ID</strong> 123', html)
             self.assertIn('Test:Win32/Example.A', html)
             self.assertIn('Severity', html)
             details = app.test_client().get('/api/threat', query_string={'name': threat.name}).get_json()
-            self.assertEqual(len(details['signatures']), 7)
+            self.assertEqual(len(details['signatures']), 9)
             self.assertEqual(details['lua_scripts'], ['print("example")'])
         database.close()
 

@@ -75,6 +75,24 @@ NID_KIND_LABELS = {
     0xE7: "org-signer RMM list",
 }
 
+# Best-effort labels for the one-byte namespace on NID64 (0xce) records.  These
+# are observed in the shipped database and cross-checked against the type of the
+# 64-bit key when that key is a packed record id (see ``Nid64Sig``).
+NID64_KIND_LABELS = {
+    0x50: "CKSIMPLEREC table members",
+    0x3A: "telemetry (#TEL) names",
+    0x57: "UNPLIB ids",
+    0x5C: "threat-name ids",
+    0x5E: "file-name ids",
+    0x67: "STATIC table members",
+    0x6A: "removal-policy ids",
+    0x6E: "script-brute HSTR names",
+    0x7B: "sample-request names",
+    0x80: "KCRCE ids",
+    0x84: "high-trust publisher names",
+    0xE4: "MDBHSTR_EXT names (Go functions)",
+}
+
 # Kinds the engine reads as attributes of the object being scanned (enable deep
 # analysis, VMM grow, exhaustive HSTR, API/SEH limits, ...).  These describe the
 # scan, they don't match a file.
@@ -179,6 +197,11 @@ class NidSig(BaseSig):
         return f"0x{self.record_kind:02x}"
 
     @property
+    def key_bytes(self) -> bytes:
+        """Raw key bytes (4 bytes for NID, 8 bytes for NID64)."""
+        return self.sig_data[: self.KEY_SIZE]
+
+    @property
     def id_block(self) -> int | None:
         """High 16 bits of a 32-bit key: ids are allocated in blocks."""
         if self.KEY_SIZE != 4:
@@ -193,6 +216,8 @@ class NidSig(BaseSig):
     @property
     def kind_label(self) -> str:
         """Best-effort family name for the ``kind`` byte."""
+        if self.KEY_SIZE == 8:
+            return NID64_KIND_LABELS.get(self.record_kind, "")
         return NID_KIND_LABELS.get(self.record_kind, "")
 
     @property
@@ -225,7 +250,65 @@ class NidSig(BaseSig):
 
 
 class Nid64Sig(NidSig):
-    """SIGNATURE_TYPE_NID64 (0xce): 8-byte key, 1-byte kind, optional name."""
+    """SIGNATURE_TYPE_NID64 (0xce): 8-byte key, 1-byte kind, optional name.
+
+    NID64 is the 64-bit sibling of NID.  The engine stores the same
+    ``{key, kind, name-id, extra}`` entry in a dedicated table
+    (``FUN_180a19c7c`` / ``FUN_180a1b678`` -> ``FUN_1803f4988``), sorted by
+    the key, and looks entries up by ``(key, kind)``.  ``Nid64Search``
+    (``FUN_180b1e6d0``) is the text-command equivalent of ``NidSearch``:
+    ``Nid64Search <kind> <id>``.  The engine also uses the table for simple
+    membership tests such as "is this record id a revoked certificate?"
+    (``FUN_180336368`` -> ``FUN_18015d2d4``).
+
+    For record-backed namespaces the 64-bit key is the engine's packed record
+    id — the same scheme produced by ``FUN_18015c56c`` for NID
+    (``crc32(payload) | type << 32 | size << 40``) and by the STATIC builder:
+    low 32 bits are the Defender CRC-32 of the record payload, bits 32..39
+    the record's signature type and bits 40..63 its payload size.  In the
+    shipped database 5,141 of 12,109 keys resolve exactly to a record in the
+    merged VDM stream, mostly NID64, STATIC, revoked-certificate,
+    aggregator, SNID and NID records.
+    """
 
     SIG_TYPE_ID = 0xCE
     KEY_SIZE = 8
+    RECORD_ID_MAX_SIZE = 0x200000
+
+    @property
+    def packed_crc32(self) -> int:
+        """Low 32 bits of the key: candidate packed-record-id CRC."""
+        return self.record_key & 0xFFFFFFFF
+
+    @property
+    def packed_sig_type_id(self) -> int:
+        """Bits 32..39 of the key: candidate record signature type."""
+        return (self.record_key >> 32) & 0xFF
+
+    @property
+    def packed_sig_type(self) -> str:
+        return SIG_TYPES.get(
+            self.packed_sig_type_id,
+            f"UNKNOWN(0x{self.packed_sig_type_id:02x})",
+        )
+
+    @property
+    def packed_size(self) -> int:
+        """Bits 40..63 of the key: candidate record payload size."""
+        return (self.record_key >> 40) & 0xFFFFFF
+
+    @property
+    def has_record_id_layout(self) -> bool:
+        """Heuristic: the key looks like a packed record id.
+
+        True when the embedded type name is known and the embedded size is
+        plausible for a VDM record (the largest shipped payload is ~1.3 MiB).
+        This is a layout test only; resolve the key against a record database to
+        know whether the record really exists.  Hashes/ids that are not packed
+        record ids can still have a "known" type byte by coincidence.
+        """
+        return (
+            0 < self.packed_size <= self.RECORD_ID_MAX_SIZE
+            and self.packed_sig_type_id in SIG_TYPES
+            and self.packed_sig_type_id != 0
+        )

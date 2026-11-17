@@ -238,11 +238,12 @@
 
     {% if threat.nid_signatures %}
     <section class="threat-section">
-      <h2>NID records <span class="badge text-bg-secondary">{{ threat.nid_signatures|length }}</span></h2>
+      <h2>NID / NID64 records <span class="badge text-bg-secondary">{{ threat.nid_signatures|length }}</span></h2>
       <p class="nid-intro">
         A NID is a <strong>reference</strong>, not a detection: a numeric id into Defender's
         internal name/object table. It contains no byte pattern, hash or behaviour, so it
-        cannot match a file on its own. <a href="/static/sigs/NID.md" target="_blank" rel="noopener">What is a NID?</a>
+        cannot match a file on its own. NID64 is the same idea with a 64-bit id.
+        <a href="/static/sigs/NID.md" target="_blank" rel="noopener">What is a NID?</a>
       </p>
       {% set noticed = namespace(purposes=[]) %}
       {% for sig in threat.nid_signatures %}
@@ -256,6 +257,17 @@
         <dl class="static-signature-details">
           <div><dt>Key</dt><dd><code>{{ sig.key_text }}</code></dd></div>
           <div><dt>Kind</dt><dd><code>{{ sig.kind_text }}</code>{% if not sig.kind_label %} · unnamed namespace{% endif %}</dd></div>
+          {% if sig.KEY_SIZE == 8 %}
+          {% if sig.has_record_id_layout %}
+          <div><dt>Packed record id</dt><dd>
+            type <code>{{ sig.packed_sig_type }}</code> ·
+            size <code>{{ sig.packed_size }}</code> ·
+            crc32 <code>0x{{ '%08x'|format(sig.packed_crc32) }}</code>
+          </dd></div>
+          {% else %}
+          <div><dt>64-bit id</dt><dd>Not a packed record id; plain id/hash in namespace <code>{{ sig.kind_text }}</code></dd></div>
+          {% endif %}
+          {% endif %}
           {% if sig.id_block %}
           <div><dt>Id block</dt><dd><code>0x{{ '%04x'|format(sig.id_block) }}</code></dd></div>
           {% elif sig.is_legacy_id %}
@@ -268,6 +280,43 @@
         {% if sig.likely_purpose not in noticed.purposes %}
         <p class="nid-note">{{ sig.purpose_note }}</p>
         {% set _ = noticed.purposes.append(sig.likely_purpose) %}
+        {% endif %}
+      </article>
+      {% endfor %}
+    </section>
+    {% endif %}
+
+    {% if threat.snid_signatures %}
+    <section class="threat-section">
+      <h2>SNID references <span class="badge text-bg-secondary">{{ threat.snid_signatures|length }}</span></h2>
+      <p class="nid-intro">
+        An SNID is a <strong>reference</strong> to a shared signature record in Defender's
+        record store: a 20-byte record key plus the referenced record's type. It carries no
+        pattern of its own; the actual detection logic lives in the referenced record (often
+        a shared group such as an <code>!#ALF:</code> list).
+        <a href="/static/sigs/SNID.md" target="_blank" rel="noopener">What is an SNID?</a>
+      </p>
+      {% set snid_noticed = namespace(referenced=[]) %}
+      {% for sig in threat.snid_signatures %}
+      <article class="signature-card static-signature-card">
+        <div class="static-signature-heading">
+          <strong>References {{ sig.reference_type }}</strong>
+          <span class="badge text-bg-light">shared record</span>
+          {% if sig.is_named %}<span class="badge text-bg-info">{{ sig.group_name }}</span>{% endif %}
+        </div>
+        <dl class="static-signature-details">
+          <div><dt>Record key</dt><dd><code>{{ sig.key_hex }}</code>{% if sig.key_is_padded %} · {{ sig.key_core|length }}-byte key{% endif %}</dd></div>
+          <div><dt>Referenced type</dt><dd><code>0x{{ '%02x'|format(sig.reference_type_id) }}</code> {{ sig.reference_type }}</dd></div>
+          {% if sig.is_named %}
+          <div><dt>Definition group</dt><dd>{{ sig.group_name }}</dd></div>
+          {% endif %}
+        </dl>
+        {% if sig.reference_type_id not in snid_noticed.referenced %}
+        <p class="nid-note">
+          The referenced record is not shipped inline. It is looked up by this key in the
+          signature record store, so the SNID alone cannot match a file.
+        </p>
+        {% set _ = snid_noticed.referenced.append(sig.reference_type_id) %}
         {% endif %}
       </article>
       {% endfor %}
