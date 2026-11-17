@@ -1,0 +1,12 @@
+{% set d = sig.details %}
+<table class="static-signature-table">
+  <thead><tr><th>Key</th><th>Value</th><th>Notes</th></tr></thead>
+  <tbody>
+    <tr><th>Flags</th><td><code>{{ d.get('flags_text') or d.get('flags')|hexnum(4) }}</code></td><td class="notes">{{ d.get('flag_bits_text') or ('%s (%s) + %s'|format(d.get('hash_algo_label', d.get('hash_type', 'Unknown')), d.get('flags_text') or d.get('flags')|hexalgo, 'prefix match (0x0001)' if d.get('prefix_match') else 'exact size (0x0001 clear)')) }}</td></tr>
+    <tr><th>File size</th><td><code>{{ d.get('file_size', '') }}</code></td><td class="notes">{{ d.get('match_mode_note') or (('file may be larger; only the first %d bytes are checked'|format(d.get('file_size', 0))) if d.get('prefix_match') else ('file must be exactly %d bytes'|format(d.get('file_size', 0)))) }}</td></tr>
+    <tr><th>Strong hash</th><td><code>{{ d.get('file_hash_hex', '') or 'Unavailable' }}</code></td><td class="notes">{{ d.get('hash_algo_label', d.get('hash_type', '')) }} over the first {{ d.get('file_size', '') }} bytes</td></tr>
+    <tr><th>Partial CRC 1</th><td><code>{{ d.get('partial_crc1')|hexnum(8) }}</code></td><td class="notes">CRC32 of the first 4 KiB</td></tr>
+    <tr><th>Partial CRC 2</th><td><code>{{ d.get('partial_crc2')|hexnum(8) }}</code></td><td class="notes">CRC32 of the first min(N, 64 KiB) bytes</td></tr>
+    <tr><th>Partial CRC 3</th><td><code>{{ d.get('partial_crc3')|hexnum(8) }}</code></td><td class="notes">CRC32 of the last 4 KiB of the N-byte prefix</td></tr>
+  </tbody>
+</table>

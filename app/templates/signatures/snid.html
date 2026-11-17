@@ -1,0 +1,7 @@
+{% set d = sig.details %}
+<p>{{ d.get('description', '') }} {{ d.get('purpose_note', '') }}</p>
+<dl>
+  <dt>Record key</dt><dd><code>{{ d.get('record_key_hex', '') }}</code></dd>
+  <dt>Referenced type</dt><dd>{{ d.get('record_sig_type_id')|hexnum }} {{ d.get('record_sig_type', '') }}</dd>
+  <dt>Definition group</dt><dd>{{ d.get('group_name', '') }}</dd>
+</dl>

@@ -12,6 +12,23 @@ from defender2yara.threat_api import (
 
 views = Blueprint('views', __name__)
 
+SIGNATURE_TEMPLATES = {
+    'STATIC': 'signatures/static.html',
+    'PEHSTR': 'signatures/pehstr.html',
+    'PEHSTR_EXT': 'signatures/pehstr_ext.html',
+    'DEXHSTR_EXT': 'signatures/dexhstr_ext.html',
+    'AAGGREGATOR': 'signatures/aaggregator.html',
+    'AAGGREGATOREX': 'signatures/aaggregatorex.html',
+    'VERSIONCHECK': 'signatures/versioncheck.html',
+    'SIGTREE': 'signatures/sigtree.html',
+    'SIGTREE_EXT': 'signatures/sigtree_ext.html',
+    'SIGTREE_BM': 'signatures/sigtree_bm.html',
+    'NID': 'signatures/nid.html',
+    'NID64': 'signatures/nid64.html',
+    'SNID': 'signatures/snid.html',
+    'REVOKED_CERTIFICATE': 'signatures/revoked_certificate.html',
+}
+
 
 def database():
     return current_app.config.get('DATABASE', DEFAULT_DATABASE)
@@ -33,6 +50,7 @@ def get_threat(local_id):
     groups = {}
     for signature in threat['signatures']:
         kind = signature['type'].removeprefix('SIGNATURE_TYPE_')
+        signature['template'] = SIGNATURE_TEMPLATES.get(kind, 'signatures/generic.html')
         groups.setdefault(kind, []).append(signature)
     return render_template(
         'threat.html', threat=threat, groups=groups,

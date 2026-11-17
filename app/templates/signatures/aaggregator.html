@@ -1,0 +1,3 @@
+{% set d = sig.details %}
+<p>Name: {{ d.get('name', '') }} &#183; Flags {{ d.get('flags')|hexnum }}</p><pre>{{ d.get('expression', '') }}</pre>
+<h4>References</h4><pre>{{ d.get('references', [])|tojson(indent=2) }}</pre>

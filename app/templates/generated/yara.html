@@ -1,0 +1,6 @@
+<section class="threat-section generated-output generated-output-yara">
+  <h2>YARA output</h2>
+  {% if output.get('status') not in ['generated', 'ok'] %}<p>Generation status: {{ output.get('status') }}</p>{% endif %}
+  {% for text in output.get('items', []) %}<div class="script"><pre>{{ text }}</pre></div>{% endfor %}
+  {% if output.get('diagnostics') %}<details><summary>Generation diagnostics</summary><pre>{{ output.get('diagnostics')|tojson(indent=2) }}</pre></details>{% endif %}
+</section>

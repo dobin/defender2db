@@ -1,0 +1,3 @@
+{% set d = sig.details %}
+<p>Behavior signature tree (BM) &#183; {{ d.get('name', '') }} {{ d.get('description', '') }}</p>
+<table class="table table-sm table-bordered"><thead><tr><th>Edge</th><th>Node / action words</th><th>Conditions</th></tr></thead><tbody>{% for edge in d.get('edges', []) %}<tr><td>{{ loop.index }}</td><td>{% for key in ['x', 'y', 'z', 'w', 'extra', 'extra2'] %}{{ edge.get(key)|hexnum(8) }} {% endfor %}</td><td>{% for condition in edge.get('conditions', []) %}<p>{{ condition.get('side', '') }} &#183; {{ condition.get('kind', '') }} &#183; Flags {{ condition.get('flags')|hexnum }}<br><code>{{ condition.get('text', condition.get('data_hex', '')) }}</code></p>{% else %}No inline conditions{% endfor %}</td></tr>{% endfor %}</tbody></table>

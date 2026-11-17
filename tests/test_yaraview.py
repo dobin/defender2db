@@ -161,8 +161,10 @@ class YaraViewTests(unittest.TestCase):
         cases = [
             ('DEXHSTR_EXT', {'threshold': 4, 'subrules': [{'rule_weight': 2, 'rule_bytes_hex': '616263', 'text': 'abc'}]}),
             ('AAGGREGATOR', {'expression': 'name1 AND name2', 'references': ['name1', 'name2']}),
+            ('AAGGREGATOREX', {'expression': 'extended expression'}),
             ('VERSIONCHECK', {'check_id': 2, 'value': 3, 'description': 'test gate'}),
             ('SIGTREE', {'edges': [{'x': 1, 'conditions': [{'side': 'left', 'kind': 'pattern', 'text': 'condition text'}]}]}),
+            ('SIGTREE_BM', {'edges': [{'x': 2}]}),
             ('NID64', {'record_key_hex': 'ffffffffffffffff', 'record_kind': 1, 'description': 'reference description'}),
             ('SNID', {'record_key_hex': 'aa' * 20, 'record_sig_type': 'STATIC'}),
             ('REVOKED_CERTIFICATE', {'thumbprint_hex': 'bb' * 20}),
@@ -183,6 +185,9 @@ class YaraViewTests(unittest.TestCase):
         self.assertIn(b'A NID is a reference, not a detection', response.data)
         self.assertIn(b'What is a NID?', response.data)
         self.assertIn(b'An SNID refers to a shared signature record', response.data)
+        self.assertIn(b'signature-card-dexhstr_ext', response.data)
+        self.assertIn(b'Behavior signature tree (BM)', response.data)
+        self.assertIn(b'Extended aggregator', response.data)
 
     def test_web_raw_download_is_explicit(self):
         self.add_signature(raw=True)

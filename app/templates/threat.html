@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html>
   <head>{% include 'header.html' %}</head>
   <body>
@@ -27,12 +27,7 @@
       {% for language in ['yara', 'lua'] %}
       {% set output = threat.generated.get(language, {}) %}
       {% if output.get('status') not in ['not_applicable', 'unavailable'] and (output.get('items') or output.get('diagnostics')) %}
-      <section class="threat-section">
-        <h2>{{ language|upper }} output</h2>
-        {% if output.get('status') not in ['generated', 'ok'] %}<p>Generation status: {{ output.get('status') }}</p>{% endif %}
-        {% for text in output.get('items', []) %}<div class="script"><pre>{{ text }}</pre></div>{% endfor %}
-        {% if output.get('diagnostics') %}<details><summary>Generation diagnostics</summary><pre>{{ output.get('diagnostics')|tojson(indent=2) }}</pre></details>{% endif %}
-      </section>
+      {% include 'generated/' ~ language ~ '.html' %}
       {% endif %}
       {% endfor %}
 
@@ -46,7 +41,7 @@
         'REVOKED_CERTIFICATE': 'Revoked certificates'
       } %}
       {% for kind, records in groups.items() %}
-      <section class="threat-section">
+      <section class="threat-section signature-group signature-group-{{ kind|lower }}">
         <h2>{{ titles.get(kind, kind) }} <span class="badge text-bg-secondary">{{ records|length }}</span></h2>
         {% if kind in ['NID', 'NID64'] %}
         <p class="nid-intro">A NID is a reference, not a detection: a numeric id into Defender's internal name/object table. It contains no byte pattern, hash or behaviour, so it cannot match a file on its own. <a href="/static/sigs/NID.md" target="_blank" rel="noopener">What is a NID?</a></p>
@@ -56,80 +51,18 @@
         <p>Environment gates apply to subsequent records in source order, not only to this display group.</p>
         {% endif %}
         {% for sig in records %}
-        {% set d = sig.details %}
-        <article class="signature-card" id="signature-{{ sig.id }}">
-          <h3>{{ sig.type }} · local ID {{ sig.id }}</h3>
-          <p>Source {{ sig.source_id|default(threat.source_id) }} · Offset {{ sig.offset|hexnum }} ·
-             Payload {{ sig.size }} bytes · Role {{ sig.role }} · Decode status <strong>{{ sig.decode_status }}</strong> ·
+        <article class="signature-card signature-card-{{ kind|lower }}" id="signature-{{ sig.id }}">
+          <h3>{{ sig.type }} &#183; local ID {{ sig.id }}</h3>
+          <p>Source {{ sig.source_id|default(threat.source_id) }} &#183; Offset {{ sig.offset|hexnum }} &#183;
+             Payload {{ sig.size }} bytes &#183; Role {{ sig.role }} &#183; Decode status <strong>{{ sig.decode_status }}</strong> &#183;
              Details version {{ sig.details_version }}</p>
           {% if sig.decode_status == 'unsupported' %}<p>No decoder is available for this record type.</p>{% endif %}
           {% if sig.decode_status == 'error' %}<p>Decoding failed; see stored diagnostics below.</p>{% endif %}
           {% if sig.decode_status == 'partial' %}<p>Partially decoded; unknown interpretation remains.</p>{% endif %}
-
-          {% if kind == 'STATIC' %}
-          <table class="static-signature-table">
-            <thead><tr><th>Key</th><th>Value</th><th>Notes</th></tr></thead>
-            <tbody>
-              <tr><th>Flags</th><td><code>{{ d.get('flags_text') or d.get('flags')|hexnum(4) }}</code></td><td class="notes">{{ d.get('flag_bits_text') or ('%s (%s) + %s'|format(d.get('hash_algo_label', d.get('hash_type', 'Unknown')), d.get('flags_text') or d.get('flags')|hexalgo, 'prefix match (0x0001)' if d.get('prefix_match') else 'exact size (0x0001 clear)')) }}</td></tr>
-              <tr><th>File size</th><td><code>{{ d.get('file_size', '') }}</code></td><td class="notes">{{ d.get('match_mode_note') or (('file may be larger; only the first %d bytes are checked'|format(d.get('file_size', 0))) if d.get('prefix_match') else ('file must be exactly %d bytes'|format(d.get('file_size', 0)))) }}</td></tr>
-              <tr><th>Strong hash</th><td><code>{{ d.get('file_hash_hex', '') or 'Unavailable' }}</code></td><td class="notes">{{ d.get('hash_algo_label', d.get('hash_type', '')) }} over the first {{ d.get('file_size', '') }} bytes</td></tr>
-              <tr><th>Partial CRC 1</th><td><code>{{ d.get('partial_crc1')|hexnum(8) }}</code></td><td class="notes">CRC32 of the first 4 KiB</td></tr>
-              <tr><th>Partial CRC 2</th><td><code>{{ d.get('partial_crc2')|hexnum(8) }}</code></td><td class="notes">CRC32 of the first min(N, 64 KiB) bytes</td></tr>
-              <tr><th>Partial CRC 3</th><td><code>{{ d.get('partial_crc3')|hexnum(8) }}</code></td><td class="notes">CRC32 of the last 4 KiB of the N-byte prefix</td></tr>
-            </tbody>
-          </table>
-          {% elif 'HSTR' in kind %}
-          <p>Name / reference: {{ d.get('name', '') }} · Threshold {{ d.get('threshold', '') }} ·
-             Flags {{ d.get('flags')|hexnum }} · End marker {{ d.get('end_marker', '') }}</p>
-          <table class="table table-sm table-bordered">
-            <thead><tr><th>Weight</th><th>Flags</th><th>Pattern (hex)</th><th>Text (best effort)</th></tr></thead>
-            <tbody>{% for rule in d.get('subrules', []) %}
-              <tr><td>{{ rule.get('rule_weight', '') }}</td><td>{{ rule.get('unknown_u8_1')|hexnum }}</td>
-                <td><code>{{ rule.get('rule_bytes_hex', '') }}</code></td><td><code>{{ rule.get('text', rule.get('rule_bytes_hex', '')|hextext) }}</code></td></tr>
-            {% endfor %}</tbody>
-          </table>
-          {% elif 'AGGREGATOR' in kind %}
-          <p>Name: {{ d.get('name', '') }} · Flags {{ d.get('flags')|hexnum }}</p>
-          <pre>{{ d.get('expression', '') }}</pre>
-          <h4>References</h4><pre>{{ d.get('references', [])|tojson(indent=2) }}</pre>
-          {% elif kind == 'VERSIONCHECK' %}
-          <p>{{ d.get('description', '') }}</p>
-          <p>Check ID {{ d.get('check_id')|hexnum }} · Value {{ d.get('value')|hexnum }}
-            {% if d.get('is_unconditional') %} · Always passes{% endif %}</p>
-          {% elif 'SIGTREE' in kind %}
-          <p>{{ d.get('name', '') }} {{ d.get('description', '') }}</p>
-          <table class="table table-sm table-bordered"><thead><tr><th>Edge</th><th>Node / action words</th><th>Conditions</th></tr></thead>
-            <tbody>{% for edge in d.get('edges', []) %}
-            <tr><td>{{ loop.index }}</td><td>{% for key in ['x', 'y', 'z', 'w', 'extra', 'extra2'] %}{{ edge.get(key)|hexnum(8) }} {% endfor %}</td>
-              <td>{% for condition in edge.get('conditions', []) %}
-              <p>{{ condition.get('side', '') }} · {{ condition.get('kind', '') }} · Flags {{ condition.get('flags')|hexnum }}<br>
-                <code>{{ condition.get('text', condition.get('data_hex', '')) }}</code></p>
-              {% else %}No inline conditions{% endfor %}</td></tr>
-            {% endfor %}</tbody>
-          </table>
-          {% elif kind in ['NID', 'NID64', 'SNID'] %}
-          <p>{{ d.get('description', '') }} {{ d.get('purpose_note', '') }}</p>
-          <dl>
-            <dt>Record key</dt><dd><code>{{ d.get('record_key_hex', '') }}</code></dd>
-            {% if kind == 'SNID' %}
-            <dt>Referenced type</dt><dd>{{ d.get('record_sig_type_id')|hexnum }} {{ d.get('record_sig_type', '') }}</dd>
-            <dt>Definition group</dt><dd>{{ d.get('group_name', '') }}</dd>
-            {% else %}
-            <dt>Kind / namespace</dt><dd>{{ d.get('record_kind')|hexnum }} {{ d.get('kind_label', '') }}</dd>
-            <dt>Purpose</dt><dd>{{ d.get('purpose_label', '') }}</dd>
-            <dt>Definition group</dt><dd>{{ d.get('record_name', '') }}</dd>
-            {% if d.get('has_record_id_layout') %}
-            <dt>Packed record ID</dt><dd>Type {{ d.get('packed_sig_type', '') }} · Size {{ d.get('packed_size', '') }} · CRC32 {{ d.get('packed_crc32')|hexnum(8) }}</dd>
-            {% endif %}
-            {% endif %}
-          </dl>
-          {% elif kind == 'REVOKED_CERTIFICATE' %}
-          <p>Thumbprint: <code>{{ d.get('thumbprint_hex', 'Unavailable') }}</code></p>
-          {% endif %}
-          <details><summary>Decoded JSON (all stored fields)</summary><pre>{{ d|tojson(indent=2) }}</pre></details>
+          {% include sig.template %}
           <a href="{{ url_for('views.api_get_signature', local_id=sig.id) }}">Signature metadata / JSON</a>
           {% if sig.raw_available %}
-          · <a href="{{ url_for('views.api_get_raw_record', local_id=sig.id) }}">Download exact raw TLV</a>
+          &#183; <a href="{{ url_for('views.api_get_raw_record', local_id=sig.id) }}">Download exact raw TLV</a>
           {% else %}<p>Raw record unavailable (not captured).</p>{% endif %}
         </article>
         {% endfor %}

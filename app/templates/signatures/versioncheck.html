@@ -1,0 +1,4 @@
+{% set d = sig.details %}
+<p>{{ d.get('description', '') }}</p>
+<p>Check ID {{ d.get('check_id')|hexnum }} · Value {{ d.get('value')|hexnum }}
+  {% if d.get('is_unconditional') %} · Always passes{% endif %}</p>

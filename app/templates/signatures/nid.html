@@ -1,0 +1,11 @@
+{% set d = sig.details %}
+<p>{{ d.get('description', '') }} {{ d.get('purpose_note', '') }}</p>
+<dl>
+  <dt>Record key</dt><dd><code>{{ d.get('record_key_hex', '') }}</code></dd>
+  <dt>Kind / namespace</dt><dd>{{ d.get('record_kind')|hexnum }} {{ d.get('kind_label', '') }}</dd>
+  <dt>Purpose</dt><dd>{{ d.get('purpose_label', '') }}</dd>
+  <dt>Definition group</dt><dd>{{ d.get('record_name', '') }}</dd>
+  {% if d.get('has_record_id_layout') %}
+  <dt>Packed record ID</dt><dd>Type {{ d.get('packed_sig_type', '') }} · Size {{ d.get('packed_size', '') }} · CRC32 {{ d.get('packed_crc32')|hexnum(8) }}</dd>
+  {% endif %}
+</dl>
