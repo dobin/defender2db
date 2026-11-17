@@ -4,6 +4,7 @@ import hashlib
 import logging
 import time
 import json
+from collections import Counter
 from sqlalchemy import insert, func, select
 from tqdm import tqdm
 
@@ -62,6 +63,7 @@ def store_source(connection, vdm, *, include_raw, generate):
         connection.execute(insert(DbThreat), threat_rows)
 
     signature_rows, raw_rows = [], []
+    decode_errors = Counter()
     intervals = iter(ownership)
     interval = next(intervals, None)
     for sig in tqdm(vdm.get_signatures(), desc='Writing signature batches', unit='record', leave=False):
@@ -73,6 +75,7 @@ def store_source(connection, vdm, *, include_raw, generate):
         details = sig.to_details()
         error = getattr(sig, 'decode_error', None)
         if error is not None:
+            decode_errors[(sig.sig_type, sig.sig_type_id)] += 1
             details = {'error': error}
         signature_rows.append((
             signature_id, source_id, owner, sig.offset, role, sig.sig_type_id,
@@ -89,3 +92,4 @@ def store_source(connection, vdm, *, include_raw, generate):
     if signature_rows:
         _insert_records(connection, signature_rows, raw_rows)
     logger.info('Stored %s in %.1f seconds', vdm.vdm_type, time.perf_counter() - started)
+    return decode_errors

@@ -75,11 +75,14 @@ class MpLuaReader:
 
     def read_function(self) -> MpLuaFunc:
         """Read MpLua function prototype."""
-        # MpLua uses 12 null bytes for src_name(4) + line_def(4) + lastline_def(4)
-        header = self.stream.read(12)
-        if header != b'\x00' * 12:
-            # Some scripts may have data here, but we ignore it
-            pass
+        # Lua 5.1 stores the source name as a size-prefixed string.  Most
+        # Defender chunks use an empty name (a single zero length), but some
+        # retain the original .lua path.
+        src_name_length = self.read_int()
+        if src_name_length:
+            self.stream.read(src_name_length)
+        src_line_positions = self.read_int()
+        lastline_def = self.read_int()
 
         nb_upvalues = self.read_byte()
         nb_params = self.read_byte()

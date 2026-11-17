@@ -1,5 +1,6 @@
-﻿import hashlib
+import hashlib
 import json
+from collections import Counter
 from pathlib import Path
 import struct
 import tempfile
@@ -216,6 +217,18 @@ class PersistenceTests(unittest.TestCase):
         self.assertTrue(malformed['details']['error'])
         self.assertEqual(get_raw_record(malformed['id'], self.path), tlv(0xBE, b'bad'))
         self.assertEqual(get_signature_details(malformed['id'], self.path), malformed)
+
+    def test_store_source_reports_unparseable_signatures(self):
+        source = synthetic_vdm()
+        with build_database(self.path, signature_version='1.463.330.0',
+                            engine_version='1.1.26100.4', include_raw=False) as connection:
+            stats = store_source(connection, source, include_raw=False,
+                                 generate=lambda threat: GENERATED)
+        self.assertEqual(sum(stats.values()), 1)
+        (sig_type, sig_type_id), count = next(iter(stats.items()))
+        self.assertEqual(sig_type_id, 0xBE)
+        self.assertEqual(sig_type, 'SIGNATURE_TYPE_DEXHSTR_EXT')
+        self.assertEqual(count, 1)
 
     def test_duplicate_names_keep_source_occurrence_and_signature_order(self):
         first = synthetic_vdm(threat_records([tlv(0, b'a'), tlv(0x7A, struct.pack('<II', 0x26, 17763)),

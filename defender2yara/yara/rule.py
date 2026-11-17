@@ -7,8 +7,40 @@ from defender2yara.defender.constant import PLATFORM, SUFFIX
 from defender2yara.defender.signature.hstr import HStrExtSig,HStrSig
 from defender2yara.defender.subrule.hstr import HStrSubRule, HStrExtSubRule
 
-from .strings import YaraString
+import yara
+
+from .strings import YaraString, simplify_hex_alternations
 from .condition import YaraCondition
+
+
+def compile_yara_source(source: str) -> tuple[str | None, Exception | None]:
+    """Compile *source*, retrying with simplified hex alternatives if needed.
+
+    YARA's hex parser reports "regular expression is too complex" for patterns
+    containing many ``(41|42|...|46)``-style one-byte alternative groups.
+    Replacing each affected group with ``??`` keeps the pattern length and
+    scoring while broadening those bytes, so the accuracy is downgraded.
+
+    Returns ``(rule_source, original_error)`` on success and ``(None, error)``
+    when the rule still does not compile.
+    """
+    try:
+        yara.compile(source=source)
+        return source, None
+    except yara.SyntaxError as error:
+        if "too complex" not in str(error).lower():
+            return None, error
+        simplified = simplify_hex_alternations(source)
+        if simplified == source:
+            return None, error
+        simplified = simplified.replace(
+            'strings_accuracy = "High"', 'strings_accuracy = "Low"'
+        )
+        try:
+            yara.compile(source=simplified)
+        except yara.SyntaxError:
+            return None, error
+        return simplified, error
 
 
 class YaraRule:

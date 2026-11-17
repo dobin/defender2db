@@ -93,18 +93,15 @@ class LuaFunc(object):
 
     def init(self):
         """Initialize Lua function. Returns (success, error_message)."""
-        src_name = self.stream.read(4)
-        if src_name != b"\x00" * 4:
-            return False, "Invalid Lua source name"
-        #assert src_name == b"\x00" * 4
-        line_def = self.stream.read(4)
-        if line_def != b"\x00" * 4:
-            return False, "Invalid Lua line definition"
-        #assert line_def == b"\x00" * 4
-        lastline_def = self.stream.read(4)
-        if lastline_def != b"\x00" * 4:
-            return False, "Invalid Lua last line definition"
-        #assert lastline_def == b"\x00" * 4
+        # Lua 5.1 stores the source name as a size-prefixed string.  Most
+        # Defender chunks have an empty name, but some (for example the
+        # MagicThread scripts) embed the original .lua path here.
+        src_name_length = self.read_int()
+        self.src_name = self.stream.read(src_name_length)
+        if len(self.src_name) != src_name_length:
+            return False, "Truncated Lua source name"
+        self.line_def = self.read_int()
+        self.lastline_def = self.read_int()
 
         self.nb_upvalues = self.read_byte()
         self.nb_params = self.read_byte()
@@ -152,18 +149,21 @@ class LuaFunc(object):
                 return False, error if error else f"Failed to init nested function {i}"
             self.funcs.append(f)
 
+        # Debug information is optional.  Stripped Defender chunks contain
+        # three zero counts, while scripts such as the MagicThreat samples
+        # retain line/local/upvalue names.  Skip it so nested functions stay
+        # aligned; export() emits stripped debug sections anyway.
         src_line_positions = self.read_int()
-        if src_line_positions != 0:
-            return False, "Invalid Lua source line positions"
-        #assert src_line_positions == 0
+        self.stream.read(4 * src_line_positions)
         nb_locals = self.read_int()
-        if nb_locals != 0:
-            return False, "Invalid Lua locals"
-        #assert nb_locals == 0
+        for _ in range(nb_locals):
+            length = self.read_int()
+            self.stream.read(length)
+            self.stream.read(8)
         nb_upvalues = self.read_int()
-        if nb_upvalues != 0:
-            return False, "Invalid Lua upvalues"
-        #assert nb_upvalues == 0
+        for _ in range(nb_upvalues):
+            length = self.read_int()
+            self.stream.read(length)
 
         return True, None
 

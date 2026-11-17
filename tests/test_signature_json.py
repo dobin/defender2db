@@ -221,12 +221,33 @@ class SignatureJsonTests(unittest.TestCase):
         kcrc = self.snapshot(KcrceSig(tlv(0x80, struct.pack("<IIIHH", 1, 2, 3, 4096, 0x8000) + b"\x04name")))
         self.assertEqual(kcrc, {"crc1": 1, "crc2": 2, "crc3": 3, "region": 4096, "flags": 0x8000, "record_name": "name"})
         payload = struct.pack("<I4sHBB", 42, b"xxxx", 3, 4, 1) + b"name"
-        for sig_type, cls in ((0x5C, ThreatBeginSig), (0xBD, LuaSig)):
-            for suffix, severity in ((b"", None), (b"xxxx\x05xxxx", 5)):
-                with self.subTest(cls=cls, severity=severity):
-                    d = self.snapshot(cls(tlv(sig_type, payload + suffix)))
-                    self.assertEqual(d, {"threat_id": 42, "category_id": 3, "type_id": 1, "threat_name": "name", "severity_id": severity})
+        for suffix, severity in ((b"", None), (b"xxxx\x05xxxx", 5)):
+            with self.subTest(cls=ThreatBeginSig, severity=severity):
+                d = self.snapshot(ThreatBeginSig(tlv(0x5C, payload + suffix)))
+                self.assertEqual(d, {"threat_id": 42, "category_id": 3, "type_id": 1, "threat_name": "name", "severity_id": severity})
         self.assertEqual(self.snapshot(ThreatEndSig(tlv(0x5D, struct.pack("<I", 42)))), {"threat_id": 42})
+
+    def test_lua_standalone_wrapper_is_decoded(self):
+        name = b"!#Lua:Test\0"
+        attributes = b"Includes\0BMLuaLib\0"
+        body = b"\x1bLuaQ\x00\x01\x04\x08\x04\x08\x01" + b"\0" * 32
+        payload = bytes([len(name), 0x15]) + struct.pack("<HI", len(attributes), len(body))
+        payload += name + attributes + body
+        sig = LuaSig(tlv(0xBD, payload))
+        self.assertEqual(sig.lua_bytecode, body)
+        d = self.snapshot(sig)
+        self.assertEqual(d, {
+            "record_name": "!#Lua:Test",
+            "has_name": True,
+            "script_type": 0x15,
+            "attributes": ["Includes", "BMLuaLib"],
+            "attribute_data_hex": None,
+            "body_size": len(body),
+            "body_format": "lua",
+            "has_lua_bytecode": True,
+            "decode_warnings": [],
+            "summary": sig.describe(),
+        })
 
 
 if __name__ == "__main__":

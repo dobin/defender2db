@@ -2,8 +2,7 @@ from typing import List,Dict,Tuple
 import os
 import sys
 import shutil
-import yara
-from collections import defaultdict
+from collections import Counter, defaultdict
 from contextlib import nullcontext
 from defender2yara.defender.dbthreat import DEFAULT_DATABASE
 from defender2yara.database_build import build_database
@@ -11,7 +10,7 @@ from defender2yara.conversion import store_source
 from packaging.version import Version
 
 from defender2yara.defender.threat import Threat
-from defender2yara.yara.rule import YaraRule
+from defender2yara.yara.rule import YaraRule, compile_yara_source
 from defender2yara.defender.vdm import Vdm
 from defender2yara.defender.download import get_latest_signature_vdm, download_latest_signature, parse_mpam_exe
 from defender2yara.defender.luaparse import fixup_lua_data, lua_decompile, lua_disassemble, lua_decompile_data
@@ -334,7 +333,14 @@ def generate_output(threat):
 
 
 def convert_threats(vdm, connection, include_raw=False):
-    store_source(connection, vdm, include_raw=include_raw, generate=generate_output)
+    return store_source(connection, vdm, include_raw=include_raw, generate=generate_output)
+
+
+def log_unparseable_signatures(stats):
+    logger.info('Unparseable signatures: %d', sum(stats.values()))
+    for (sig_type, sig_type_id), count in sorted(
+            stats.items(), key=lambda item: (-item[1], item[0][0])):
+        logger.info('  %s (0x%02x): %d', sig_type, sig_type_id, count)
 
 
 def get_lua_from_threat(threat:Threat, diagnostics=None) -> List[bytes]:
@@ -350,12 +356,23 @@ def get_lua_from_threat(threat:Threat, diagnostics=None) -> List[bytes]:
                 f"vdm_offset={hex(offset) if offset is not None else 'unknown'} "
                 f"payload_size={len(sig.sig_data)} prefix_hex={sig.sig_data[:48].hex()}"
             )
-            lua_header_offset = sig.sig_data.find(b'\x1bLuaQ')
+            body = getattr(sig, "body", None)
+            if body is None:
+                body = sig.sig_data
+            lua_header_offset = body.find(b'\x1bLuaQ')
             if lua_header_offset < 0:
+                if getattr(sig, "body_format", None) == "mplua_headerless":
+                    # A known variant whose instruction set the bundled
+                    # decompiler does not implement.  This is not a parse
+                    # failure, so do not emit one warning per record.
+                    logger.debug("Unsupported headerless Lua body: %s", context)
+                    diagnostics.append({'offset': offset, 'status': 'unsupported',
+                                        'message': 'Headerless MpLua body'})
+                    continue
                 logger.warning("No Lua header: %s", context)
                 diagnostics.append({'offset': offset, 'status': 'error', 'message': 'No Lua header'})
                 continue
-            lua_data = sig.sig_data[lua_header_offset:]
+            lua_data = body[lua_header_offset:]
             lua_decompiled = lua_decompile_data(lua_data)
             if lua_decompiled is None or b'DECOMPILER ERROR' in lua_decompiled:
                 logger.warning("Lua decompilation incomplete: %s lua_header_offset=%d; trying disassembly", context, lua_header_offset)
@@ -382,13 +399,16 @@ def get_yara_from_threat(threat:Threat, diagnostics=None) -> List[str]:
         return result
 
     for yara_rule in yara_rules.generate_rules():
-        try:
-            yara.compile(source=yara_rule)
-        except yara.SyntaxError as e:
-            logger.warning(f"Failed to convert {threat.threat_name} to yara: {str(e)}")
-            diagnostics.append({'status': 'error', 'message': str(e)})
+        compiled, compile_error = compile_yara_source(yara_rule)
+        if compiled is None:
+            logger.warning(f"Failed to convert {threat.threat_name} to yara: {str(compile_error)}")
+            diagnostics.append({'status': 'error', 'message': str(compile_error)})
             logger.debug("\n"+yara_rule)
             continue
+        if compiled != yara_rule:
+            diagnostics.append({'status': 'simplified',
+                                'message': f'Hex alternatives simplified to compile: {compile_error}'})
+            yara_rule = compiled
         result.append(yara_rule)
 
     return result
@@ -414,13 +434,12 @@ def covert_vdm_to_yara(vdm:Vdm,filesize_check:str,header_check:bool=False) -> Tu
         if not yara_rules:
             continue
         for yara_rule in yara_rules.generate_rules():
-            try:
-                yara.compile(source=yara_rule)
-            except yara.SyntaxError as e:
-                logger.warn(f"Failed to convert {threat.threat_name}: {str(e)}")
+            compiled, compile_error = compile_yara_source(yara_rule)
+            if compiled is None:
+                logger.warn(f"Failed to convert {threat.threat_name}: {str(compile_error)}")
                 logger.debug("\n"+yara_rule)
                 continue
-            results[threat].append(yara_rule)
+            results[threat].append(compiled)
             rule_count += 1
         progress_bar.update(1)
 
@@ -499,6 +518,7 @@ def main(args):
         engine_version=engine_version, include_raw=getattr(args, 'include_raw', False),
     ) if args.convert else nullcontext(None)
 
+    unparseable = Counter()
     with context as connection:
         # iterate through mpav and mpas - each can take a lot of memory
         for name in ["mpav","mpas"]:
@@ -525,7 +545,7 @@ def main(args):
 
             if args.convert:
                 # convert threats to database
-                convert_threats(vdm, connection, getattr(args, 'include_raw', False))
+                unparseable.update(convert_threats(vdm, connection, getattr(args, 'include_raw', False)))
             elif args.asr:
                 # extract ASR entries
                 parse_asr(vdm)
@@ -549,5 +569,7 @@ def main(args):
 
                 pass
 
+    if args.convert:
+        log_unparseable_signatures(unparseable)
     logger.info("Complete")
     sys.exit(0)

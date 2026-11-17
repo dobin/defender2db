@@ -1,4 +1,5 @@
 import itertools
+from collections import Counter
 from pathlib import Path
 import struct
 import tempfile
@@ -12,12 +13,17 @@ import yara
 from defender2yara.defender.lua_backend import load_lua_backend, decompile_data
 from defender2yara.defender.luaparse import fixup_lua_data
 from defender2yara.defender.signature.base import BaseSig
+from defender2yara.defender.signature.lua import LuaSig
 from defender2yara.defender.vdm import Vdm
 from defender2yara.main import get_lua_from_threat
 from defender2yara.main import main
 from defender2yara.yara.condition import YaraCondition
-from defender2yara.yara.rule import YaraRule
+from defender2yara.yara.rule import YaraRule, compile_yara_source
 from defender2yara.yara.strings import YaraString
+
+
+def record(kind, payload):
+    return bytes([kind]) + len(payload).to_bytes(3, "little") + payload
 
 
 def make_threat(weights, threshold):
@@ -79,6 +85,25 @@ class PatternTests(unittest.TestCase):
         self.assertTrue(compiled.match(data=bytes.fromhex('aa11223344bb')))
         self.assertFalse(compiled.match(data=bytes.fromhex('aa1122bb')))
 
+    def test_consecutive_and_trailing_jumps_are_removed(self):
+        pattern, inaccurate = YaraString.parse_ext_subrule(bytes.fromhex('aa' + '900214' * 5 + '9000'))
+        self.assertEqual(pattern, 'aa')
+        yara.compile(source=f'rule check {{ strings: $a={{{pattern}}} condition: $a }}')
+
+    def test_alternation_simplification_compiles(self):
+        alternatives = '(41|42|43|44|45|46|30|31|32|33|34|35|36|37|38|39)'
+        block = 'ff 10 00 00 00 ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ' + alternatives + ' ' + alternatives + ' 00 00 00 00 ff ff ff ff 0e 00 00 00'
+        source = (f'rule check {{ meta: strings_accuracy = "High" '
+                  f'strings: $a={{{" ".join([block] * 8)}}} condition: $a }}')
+        compiled, error = compile_yara_source(source)
+        if error is None:
+            self.assertEqual(compiled, source)
+        else:
+            self.assertIn('too complex', str(error).lower())
+            self.assertIsNotNone(compiled)
+            yara.compile(source=compiled)
+            self.assertIn('strings_accuracy = "Low"', compiled)
+
     def test_truncated_operands(self):
         for data in ('aa90', 'aa9001', 'aa9003', 'aa9003040411', 'aa9004020341'):
             with self.subTest(data=data), self.assertRaises(ValueError):
@@ -94,7 +119,7 @@ class ContainerTests(unittest.TestCase):
              patch('defender2yara.main.get_latest_engine_version', return_value='1.1.26100.4'), \
              patch('defender2yara.main.os.path.exists', side_effect=lambda path: str(path).endswith('dlta.vdm')), \
              patch('defender2yara.main.build_database') as build, \
-             patch('defender2yara.main.convert_threats') as convert, \
+             patch('defender2yara.main.convert_threats', return_value=Counter()) as convert, \
              patch('defender2yara.main.Vdm') as factory:
             factory.return_value.apply_delta_vdm.side_effect = lambda path: calls.append('delta')
             factory.return_value.parse_files.side_effect = lambda: calls.append('parse')
@@ -159,6 +184,31 @@ class LuaTests(unittest.TestCase):
         result, error = fixup_lua_data(mplua_chunk()[:30])
         self.assertIsNone(result)
         self.assertIsNotNone(error)
+
+    def test_non_empty_source_name(self):
+        name = b"mavsigs\\luastandalone\\test.debuglua\0"
+        chunk = mplua_chunk()
+        chunk = chunk[:12] + struct.pack("<I", len(name)) + name + chunk[16:]
+        fixed, error = fixup_lua_data(chunk)
+        self.assertIsNone(error)
+        self.assertIn(b"return", decompile_data(chunk))
+        self.assertIn(b"return", decompile_data(fixed))
+
+    def test_headerless_body_has_no_warning(self):
+        name = b"Bedep\0"
+        attributes = b"Includes\0Bedep\0"
+        body = b"\x01" + b"\0" * 23 + b"\x02\x02\x04\0\0\0" + b"\0" * 4
+        payload = bytes([len(name), 0x11]) + struct.pack("<HI", len(attributes), len(body))
+        payload += name + attributes + body
+        sig = LuaSig(record(0xBD, payload))
+        self.assertEqual(sig.body_format, "mplua_headerless")
+        self.assertIsNone(sig.lua_bytecode)
+        threat = SimpleNamespace(threat_name="!InfrastructureShared", threat_id=1, signatures=[sig])
+        sig.offset = 0
+        diagnostics = []
+        with self.assertNoLogs("defender2yara", level="WARNING"):
+            self.assertEqual(get_lua_from_threat(threat, diagnostics), [])
+        self.assertEqual(diagnostics[0]["status"], "unsupported")
 
     def test_missing_header_and_failed_decompile(self):
         sig = SimpleNamespace(sig_type='SIGNATURE_TYPE_LUASTANDALONE', sig_data=b'no Lua')

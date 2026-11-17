@@ -4,6 +4,14 @@ import re
 from defender2yara.defender.subrule.hstr import HStrSubRule,HStrExtSubRule
 from defender2yara.util import is_printable_ascii, is_printable_utf16_le_ascii
 
+_ALTERNATION_GROUP = re.compile(r'\([0-9a-f]{2}(?:\|[0-9a-f]{2})+\)')
+
+
+def simplify_hex_alternations(source: str) -> str:
+    """Replace multi-way single-byte hex alternatives with a wildcard."""
+    return _ALTERNATION_GROUP.sub("??", source)
+
+
 class YaraString:
     def __init__(self,subrule:Union[HStrSubRule,HStrExtSubRule]):
         self.string,\
@@ -184,12 +192,22 @@ class YaraString:
                 hex_string.append(f"{data[p]:02x}")
                 p += 1
 
-        result = " ".join(hex_string)
+        # YARA rejects more than one consecutive variable-length jump and also
+        # rejects jumps at either end of a hex string.  Merge interior runs
+        # (the sum is equivalent) and drop leading/trailing runs.
+        dynamic_jump = re.compile(r'^\[0-(\d+)\]$')
+        while hex_string and dynamic_jump.match(hex_string[0]):
+            hex_string.pop(0)
+        while hex_string and dynamic_jump.match(hex_string[-1]):
+            hex_string.pop()
 
-        # fix unsupported regex-like syntax #@todo make regex-like syntax check
-        # e.g.) {57 3e 00 00 02 00 81 [0-3]} <- hex strings ending with "[0-3]" is invalid.
-        result = re.sub(r' \[0-\d+\]$', '', result) 
-        # e.g.) {[0-3] 57 3e 00 00 02 00 81} <- hex strings starting with "[0-3]" is invalid.
-        result = re.sub(r'^\[0-\d+\]', '', result) 
+        merged = []
+        for item in hex_string:
+            current = dynamic_jump.match(item)
+            previous = dynamic_jump.match(merged[-1]) if merged else None
+            if current and previous:
+                merged[-1] = f"[0-{int(previous.group(1)) + int(current.group(1))}]"
+            else:
+                merged.append(item)
 
-        return result, is_inaccurate
+        return " ".join(merged), is_inaccurate
