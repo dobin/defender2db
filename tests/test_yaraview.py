@@ -188,6 +188,10 @@ class YaraViewTests(unittest.TestCase):
         self.assertIn(b'signature-card-dexhstr_ext', response.data)
         self.assertIn(b'Behavior signature tree (BM)', response.data)
         self.assertIn(b'Extended aggregator', response.data)
+        self.assertIn(b'A DEX string signature matches weighted patterns', response.data)
+        self.assertIn(b'href="/static/sigs/SIG_AAGGREGATOREX.md"', response.data)
+        self.assertIn(b'href="/static/sigs/SIG_NID64.md"', response.data)
+        self.assertIn(b'No type-specific description is available yet for UNKNOWN signatures.', response.data)
 
     def test_web_raw_download_is_explicit(self):
         self.add_signature(raw=True)

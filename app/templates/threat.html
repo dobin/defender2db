@@ -43,6 +43,11 @@
       {% for kind, records in groups.items() %}
       <section class="threat-section signature-group signature-group-{{ kind|lower }}">
         <h2>{{ titles.get(kind, kind) }} <span class="badge text-bg-secondary">{{ records|length }}</span></h2>
+        {% set signature_info = signature_descriptions.get(kind, {}) %}
+        {% set description = signature_info.get('description', signature_descriptions.get('_default', '')|replace('{type}', kind)) %}
+        {% if description %}<p class="signature-type-description">{{ description }}
+          {% if signature_info.get('detail') %}<a href="{{ url_for('static', filename='sigs/' ~ signature_info.detail) }}">Detailed signature description</a>{% endif %}
+        </p>{% endif %}
         {% if kind in ['NID', 'NID64'] %}
         <p class="nid-intro">A NID is a reference, not a detection: a numeric id into Defender's internal name/object table. It contains no byte pattern, hash or behaviour, so it cannot match a file on its own. <a href="/static/sigs/NID.md" target="_blank" rel="noopener">What is a NID?</a></p>
         {% elif kind == 'SNID' %}
@@ -53,13 +58,12 @@
         {% for sig in records %}
         <article class="signature-card signature-card-{{ kind|lower }}" id="signature-{{ sig.id }}">
           <h3>{{ sig.type }} &#183; local ID {{ sig.id }}</h3>
-          <p>Source {{ sig.source_id|default(threat.source_id) }} &#183; Offset {{ sig.offset|hexnum }} &#183;
-             Payload {{ sig.size }} bytes &#183; Role {{ sig.role }} &#183; Decode status <strong>{{ sig.decode_status }}</strong> &#183;
-             Details version {{ sig.details_version }}</p>
+
           {% if sig.decode_status == 'unsupported' %}<p>No decoder is available for this record type.</p>{% endif %}
           {% if sig.decode_status == 'error' %}<p>Decoding failed; see stored diagnostics below.</p>{% endif %}
           {% if sig.decode_status == 'partial' %}<p>Partially decoded; unknown interpretation remains.</p>{% endif %}
           {% include sig.template %}
+          <details><summary>Decoded JSON (all stored fields)</summary><pre>{{ sig.details|tojson(indent=2) }}</pre></details>
           <a href="{{ url_for('views.api_get_signature', local_id=sig.id) }}">Signature metadata / JSON</a>
           {% if sig.raw_available %}
           &#183; <a href="{{ url_for('views.api_get_raw_record', local_id=sig.id) }}">Download exact raw TLV</a>

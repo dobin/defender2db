@@ -1,0 +1,50 @@
+{
+  "_default": "No type-specific description is available yet for {type} signatures.",
+  "STATIC": {
+    "description": "A file fingerprint checked against its size, partial checksums, and a strong hash.",
+    "detail": "SIG_STATIC.md"
+  },
+  "PEHSTR": {
+    "description": "A PE string signature matches weighted byte or text patterns in a Windows executable."
+  },
+  "PEHSTR_EXT": {
+    "description": "An extended PE string signature matches weighted patterns with extended PE-specific metadata."
+  },
+  "DEXHSTR_EXT": {
+    "description": "A DEX string signature matches weighted patterns in Android Dalvik executable strings."
+  },
+  "AAGGREGATOR": {
+    "description": "An aggregator combines references to other Defender signatures into a detection expression."
+  },
+  "AAGGREGATOREX": {
+    "description": "An extended aggregator combines other signature results with a boolean expression.",
+    "detail": "SIG_AAGGREGATOREX.md"
+  },
+  "VERSIONCHECK": {
+    "description": "A version check gates subsequent signature records based on an environment or engine value."
+  },
+  "SIGTREE": {
+    "description": "A behavior signature tree represents related nodes, edges, and conditions used to identify behavior."
+  },
+  "SIGTREE_EXT": {
+    "description": "An extended behavior signature tree records nodes, edges, and additional conditions."
+  },
+  "SIGTREE_BM": {
+    "description": "A behavior-monitoring signature tree describes behavior rules in the BM format."
+  },
+  "NID": {
+    "description": "A NID is a numeric reference into Defender's internal name or object table, not a detector.",
+    "detail": "SIG_NID.md"
+  },
+  "NID64": {
+    "description": "A NID64 is a 64-bit reference into Defender's internal id table, not a detector.",
+    "detail": "SIG_NID64.md"
+  },
+  "SNID": {
+    "description": "An SNID references a shared signature record and does not contain the record body itself.",
+    "detail": "SIG_SNID.md"
+  },
+  "REVOKED_CERTIFICATE": {
+    "description": "A revoked-certificate signature identifies a certificate thumbprint that Defender no longer trusts."
+  }
+}

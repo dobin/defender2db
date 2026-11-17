@@ -1,5 +1,7 @@
 from collections import Counter
 from io import BytesIO
+import json
+from pathlib import Path
 
 from flask import Blueprint, abort, current_app, jsonify, redirect, render_template, request, send_file, url_for
 from sqlalchemy import select
@@ -29,6 +31,16 @@ SIGNATURE_TEMPLATES = {
     'REVOKED_CERTIFICATE': 'signatures/revoked_certificate.html',
 }
 
+SIGNATURE_DESCRIPTIONS_PATH = Path(__file__).parent / 'static' / 'sigs' / 'signatures.json'
+
+
+def load_signature_descriptions():
+    try:
+        with SIGNATURE_DESCRIPTIONS_PATH.open(encoding='utf-8') as descriptions_file:
+            return json.load(descriptions_file)
+    except (OSError, json.JSONDecodeError):
+        return {}
+
 
 def database():
     return current_app.config.get('DATABASE', DEFAULT_DATABASE)
@@ -55,6 +67,7 @@ def get_threat(local_id):
     return render_template(
         'threat.html', threat=threat, groups=groups,
         signature_counts=sorted(Counter(sig['type'] for sig in threat['signatures']).items()),
+        signature_descriptions=load_signature_descriptions(),
     )
 
 
