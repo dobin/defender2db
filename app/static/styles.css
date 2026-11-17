@@ -235,6 +235,16 @@
     overflow-wrap: anywhere;
   }
 
+  .nid-intro {
+    max-width: 60rem;
+  }
+
+  .nid-note {
+    margin: 0.75em 0 0;
+    color: var(--bs-secondary-color, #6c757d);
+    font-size: 0.9rem;
+  }
+
   .opsec_good { color: green; }
   .opsec_bad { color: red; }
   .opsec_neutral { color: orange; }

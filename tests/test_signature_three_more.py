@@ -46,6 +46,41 @@ class NidTests(unittest.TestCase):
         self.assertEqual(sig.record_kind, 0x84)
         self.assertEqual(sig.record_name, "#HighTrustPublisher_VLC")
 
+    def test_kind_label_and_purpose(self):
+        # Trojan:Linux/Metasploit - reference-only record in the 0x77d1 id block
+        sig = NidSig(tlv(0x55, bytes.fromhex("af7fd17711")))
+        self.assertEqual(sig.key_text, "0x77d17faf")
+        self.assertEqual(sig.kind_text, "0x11")
+        self.assertEqual(sig.id_block, 0x77D1)
+        self.assertEqual(sig.kind_label, "name slots (packers, tags)")
+        self.assertFalse(sig.is_legacy_id)
+        self.assertEqual(sig.purpose_label, "naming")
+        self.assertEqual(sig.likely_purpose, "naming")
+        self.assertIn("name slot", sig.purpose_note)
+
+    def test_group_membership_purpose(self):
+        payload = (0x000092B9).to_bytes(4, "little") + b"\xe7" + b"!#OrgSignerRmmNormal\x00"
+        sig = NidSig(tlv(0x55, payload))
+        self.assertEqual(sig.record_name, "!#OrgSignerRmmNormal")
+        self.assertEqual(sig.likely_purpose, "group membership")
+
+    def test_tagging_purpose(self):
+        # kind 0x2b is an engine attribute (deep analysis / VMM grow family)
+        sig = NidSig(tlv(0x55, bytes.fromhex("905dd1772b")))
+        self.assertEqual(sig.likely_purpose, "tagging")
+
+    def test_unknown_kind_has_no_label(self):
+        sig = NidSig(tlv(0x55, bytes.fromhex("905dd177ff")))
+        self.assertEqual(sig.kind_label, "")
+        self.assertEqual(sig.likely_purpose, "naming")
+
+    def test_legacy_small_id(self):
+        # Virus:DOS/Nutcracker.6727 - id from one of the old flat name tables
+        sig = NidSig(tlv(0x55, bytes.fromhex("5300000011")))
+        self.assertEqual(sig.record_key, 0x53)
+        self.assertTrue(sig.is_legacy_id)
+        self.assertEqual(sig.id_block, 0)
+
 
 class SigTreeTests(unittest.TestCase):
     def test_behavior_tree_without_conditions(self):

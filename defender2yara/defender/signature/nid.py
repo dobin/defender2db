@@ -4,6 +4,109 @@ from .base import BaseSig
 from defender2yara.defender.constant import SIG_TYPES
 
 
+# Empirically derived labels for the one-byte ``kind`` field.  Microsoft does
+# not document this enum; the labels come from the names found on the long-form
+# records in ``!InfrastructureShared`` and from the families that reference each
+# kind (see app/static/sigs/NID.md).
+NID_KIND_LABELS = {
+    0x03: "Win32 legacy names",
+    0x04: "BAT / Win32 legacy names",
+    0x05: "IRC / legacy names",
+    0x06: "SWF names",
+    0x07: "HTML names",
+    0x0B: "PDB / SLF / ALF names",
+    0x0D: "legacy DOS virus names",
+    0x0E: "test-file names",
+    0x0F: "legacy scanner DB names",
+    0x10: "legacy scanner DB names",
+    0x11: "name slots (packers, tags)",
+    0x12: "Win95 legacy names",
+    0x13: "Win16 legacy names",
+    0x14: "legacy scanner DB names",
+    0x15: "unnamed tags",
+    0x16: "JS / ASP names",
+    0x18: "Word macro names (W1M/W2M)",
+    0x19: "Access macro names (A97M)",
+    0x1A: "ALF names",
+    0x1B: "Java names",
+    0x1C: "misc attribute names",
+    0x1D: "WinNT names",
+    0x1E: "O97M macro names",
+    0x1F: "O97M macro names",
+    0x20: "O97M macro names",
+    0x21: "Excel macro names (X97M)",
+    0x24: "API function names",
+    0x27: "API import names",
+    0x28: "installer script names (RAR)",
+    0x29: "installer script names (NSIS)",
+    0x2A: "installer script names (Inno)",
+    0x2B: "engine attribute / analysis flag",
+    0x2C: "engine attribute / analysis flag",
+    0x2D: "engine attribute / analysis flag",
+    0x2E: "engine attribute / analysis flag",
+    0x2F: "password list entries",
+    0x31: "engine attribute / analysis flag",
+    0x32: "engine attribute / analysis flag",
+    0x35: "engine attribute / analysis flag",
+    0x36: "engine attribute / analysis flag",
+    0x3A: "LowFi / aggregator names",
+    0x3C: "engine attribute / analysis flag",
+    0x4D: "ALF group entries",
+    0x4E: "LowFi Lua names",
+    0x51: "attribute-match code-patch names",
+    0x59: "persistence names",
+    0x5D: "LowFi behaviour names",
+    0x5F: "LowFi Lua / path names",
+    0x61: "PE string / ALF group entries",
+    0x63: "DLL name references",
+    0x71: "FDR names",
+    0x78: "PE extended string names",
+    0x7C: "telemetry (#TEL) names",
+    0x7D: "telemetry (#TEL) names",
+    0xA2: "tag names",
+    0xC8: "ALF Java entries",
+    0xC9: "NID group definitions",
+    0xCA: "not-interesting list",
+    0xD2: "clean-folder list",
+    0xD5: "trusted-installer list",
+    0xDC: "clean-domain / NID list",
+    0xDF: "ALF group entries",
+    0xE6: "SNID-EX helper names",
+    0xE7: "org-signer RMM list",
+}
+
+# Kinds the engine reads as attributes of the object being scanned (enable deep
+# analysis, VMM grow, exhaustive HSTR, API/SEH limits, ...).  These describe the
+# scan, they don't match a file.
+TAGGING_KINDS = frozenset({0x2B, 0x2C, 0x2D, 0x2E, 0x31, 0x32, 0x35, 0x36, 0x3C})
+
+# Kinds whose ids are members of a named list (allow-lists, clean lists, the
+# shared ALF/behaviour groups).
+GROUP_KINDS = frozenset({0x4D, 0xA2, 0xC9, 0xCA, 0xD2, 0xD5, 0xDC, 0xDF, 0xE7})
+
+PURPOSE_NOTES = {
+    "tagging": (
+        "Tells the engine something about the object being scanned "
+        "(for example: analyse it deeper). It is not a detection."
+    ),
+    "group membership": (
+        "One id of a named list or shared group "
+        "(allow-list, clean list, ALF/behaviour group). It is not a detection."
+    ),
+    "naming": (
+        "A name slot in Defender's internal id table. It names or aliases something; "
+        "it describes no file content, so nothing can match it."
+    ),
+}
+
+# Shorter display names for the roles above.
+PURPOSE_LABELS = {
+    "tagging": "tagging",
+    "group membership": "group / list entry",
+    "naming": "naming",
+}
+
+
 class NidSig(BaseSig):
     """
     SIGNATURE_TYPE_NID (0x55).
@@ -19,14 +122,16 @@ class NidSig(BaseSig):
     (``crc32(key,kind) | 0x55 << 32 | 5 << 40``) and keeps a hash-table entry
     of ``{key, kind, value, name-id}``.  ``NidSearch`` / ``Nid64Search`` look
     an entry up by ``(key, kind)`` and return its name.  ``FUN_18015b364``
-    consumes small kinds (``0x2b``..``0x4b``) as feature/attribute ids from the
-    ``NID_*`` enum; shipped records also use larger namespace ids.
+    queries (kind, key) pairs to toggle engine features; those kinds
+    (``0x2b``..``0x3c``) are attributes of the object being scanned rather than
+    names.
 
-    In real threats the payload is always exactly five bytes ("attach
-    attribute/kind to object key", no text).  The ``!InfrastructureShared``
-    bucket additionally carries the long form, where ``name`` is the record
-    name the id maps to (e.g. ``#LOWFI:AGG:Chindo.A1``, ``#TEL``,
-    ``!#OrgSignerRmmNormal``).
+    In real threats the payload is always exactly five bytes ("this object id is
+    referenced here", no text).  The ``!InfrastructureShared`` bucket additionally
+    carries the long form, where ``name`` is the definition group the reference
+    belongs to (e.g. ``#TEL``, ``!#OrgSignerRmmNormal``) - not the name of the
+    target.  It is therefore not a usable ``id -> name`` dictionary (only a
+    handful of the ~192k per-threat references have a companion record at all).
 
     ``SIGNATURE_TYPE_NID64`` (0xce) is the same format with an 8-byte key.
     """
@@ -64,6 +169,53 @@ class NidSig(BaseSig):
     @property
     def has_name(self) -> bool:
         return len(self.record_name_raw) > 0
+
+    @property
+    def key_text(self) -> str:
+        return f"0x{self.record_key:0{self.KEY_SIZE * 2}x}"
+
+    @property
+    def kind_text(self) -> str:
+        return f"0x{self.record_kind:02x}"
+
+    @property
+    def id_block(self) -> int | None:
+        """High 16 bits of a 32-bit key: ids are allocated in blocks."""
+        if self.KEY_SIZE != 4:
+            return None
+        return (self.record_key >> 16) & 0xFFFF
+
+    @property
+    def is_legacy_id(self) -> bool:
+        """Small keys are ids from one of the old flat name tables."""
+        return self.KEY_SIZE == 4 and self.record_key < 0x10000
+
+    @property
+    def kind_label(self) -> str:
+        """Best-effort family name for the ``kind`` byte."""
+        return NID_KIND_LABELS.get(self.record_kind, "")
+
+    @property
+    def likely_purpose(self) -> str:
+        """Best-effort role: ``naming``, ``tagging`` or ``group membership``.
+
+        The record itself does not say which role it has; the guess is based on
+        the kind namespace it lives in.
+        """
+        if self.record_kind in TAGGING_KINDS:
+            return "tagging"
+        if self.record_kind in GROUP_KINDS:
+            return "group membership"
+        return "naming"
+
+    @property
+    def purpose_note(self) -> str:
+        return PURPOSE_NOTES[self.likely_purpose]
+
+    @property
+    def purpose_label(self) -> str:
+        """Short display name for :attr:`likely_purpose`."""
+        return PURPOSE_LABELS[self.likely_purpose]
 
     def describe(self) -> str:
         text = f"key=0x{self.record_key:0{self.KEY_SIZE * 2}x} kind=0x{self.record_kind:02x}"
