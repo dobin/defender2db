@@ -23,7 +23,26 @@
       <button type="submit">Search</button>
     </form>
   <br>
-  <br>
+
+  <div class="row mt-4">
+    <div class="col-md-6 mb-3">
+      <section class="card h-100" aria-labelledby="rest-api-heading">
+        <h2 class="card-header h5" id="rest-api-heading">REST</h2>
+        <div class="card-body">
+          <p>Search with <code>{{ domain }}/api/threats?threat_name=...</code></p>
+        </div>
+      </section>
+    </div>
+    <div class="col-md-6 mb-3">
+      <section class="card h-100" aria-labelledby="mcp-heading">
+        <h2 class="card-header h5" id="mcp-heading">MCP</h2>
+        <div class="card-body">
+          <p>Connect a Streamable HTTP MCP client to <code>{{ mcp_endpoint }}</code>.</p>
+        </div>
+      </section>
+    </div>
+  </div>
+
   {% if metadata %}
   <h2>Database Information</h2>
   <table class="table table-sm table-bordered" style="width: auto;">
@@ -43,27 +62,8 @@
     </tbody>
   </table>
   {% endif %}
-
-  {% if metadata %}<p>Schema {{ metadata.schema_version }} · Decoder {{ metadata.decoder_version }} ·
+   {% if metadata %}<p>Schema {{ metadata.schema_version }} · Decoder {{ metadata.decoder_version }} ·
     Raw records: {{ 'captured' if metadata.raw_included else 'not captured; rebuild with --convert --include-raw to capture' }}</p>{% endif %}
-  <div class="row mt-4">
-    <div class="col-md-6 mb-3">
-      <section class="card h-100" aria-labelledby="rest-api-heading">
-        <h2 class="card-header h5" id="rest-api-heading">REST API</h2>
-        <div class="card-body">
-          <p>Search with <code>{{ domain }}/api/threats?threat_name=...</code></p>
-        </div>
-      </section>
-    </div>
-    <div class="col-md-6 mb-3">
-      <section class="card h-100" aria-labelledby="mcp-heading">
-        <h2 class="card-header h5" id="mcp-heading">MCP</h2>
-        <div class="card-body">
-          <p>Connect a Streamable HTTP MCP client to <code>{{ mcp_endpoint }}</code>.</p>
-        </div>
-      </section>
-    </div>
-  </div>
 
   <h2>Source</h2>
   Source at <a href="https://github.com/dobin/defender2db">github.com/dobin/defender2db</a>
