@@ -25,9 +25,6 @@ def run():
     parser.add_argument('-c', '--convert', action='store_true', required=False, default=False, help="convert downloaded signatures to DB format")
     parser.add_argument('-a', '--asr', action='store_true', required=False, default=False, help="Extract ASR rules from VDM")
 
-    parser.add_argument('--topickle', action='store_true', default=False, help="write VDM cache files. to be used with --cacheonly")
-    parser.add_argument('--frompickle', action='store_true', default=False, help="Load VDM cache files")
-
     parser.add_argument('--header_check',action='store_true',default=False,help="add file header check to generated YARA rules")
     parser.add_argument('--filesize_check',required=False,type=str,default="20MB",help="add filesize check to generated YARA rules")
     parser.add_argument('--no_filesize_check',action='store_true',required=False,default=False,help="remove filesize check from generated YARA rules")

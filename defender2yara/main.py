@@ -550,36 +550,26 @@ def main(args):
     for name in ["mpav","mpas"]:
         vdm: Vdm = None
 
-        if args.frompickle:  # Load from cache/*.vdm.pickle
-            logger.info(f"Loading vdm cache: {cache_dir}")
-            vdm = Vdm.make_from_cache(cache_dir,name)
-            logger.info("VDM from cache: signatures: {}  threats: {}".format(
-                len(vdm.signatures),
-                len(vdm.threats)))
-        else:  # convert from the latest signature files: cache/[engine, vdm] (takes some time)
-            major_version = ".".join(signature_version.split(".")[0:2])
-            minor_version = ".".join(signature_version.split(".")[2:4])
-            vdm_base_path = os.path.join(cache_dir,"vdm",major_version,'0.0')
-            vdm_delta_path = os.path.join(cache_dir,"vdm",major_version,minor_version)
-            base_file = os.path.join(vdm_base_path,name+"base.vdm")
-            delta_file = os.path.join(vdm_delta_path,name+"dlta.vdm")
-        
-            logger.info(f"Loading base signature file: {base_file}")
-            logger.info(f"Creating vdm from files: {vdm_base_path}")
-            vdm = Vdm(base_file)
-            if os.path.exists(delta_file):
-                logger.info(f"Applying delta patch: {delta_file}")
-                vdm.apply_delta_vdm(delta_file)
-            # Parse the patched data, not the stale base-only signatures.
-            vdm.parse_files()
+        major_version = ".".join(signature_version.split(".")[0:2])
+        minor_version = ".".join(signature_version.split(".")[2:4])
+        vdm_base_path = os.path.join(cache_dir,"vdm",major_version,'0.0')
+        vdm_delta_path = os.path.join(cache_dir,"vdm",major_version,minor_version)
+        base_file = os.path.join(vdm_base_path,name+"base.vdm")
+        delta_file = os.path.join(vdm_delta_path,name+"dlta.vdm")
+
+        logger.info(f"Loading base signature file: {base_file}")
+        logger.info(f"Creating vdm from files: {vdm_base_path}")
+        vdm = Vdm(base_file)
+        if os.path.exists(delta_file):
+            logger.info(f"Applying delta patch: {delta_file}")
+            vdm.apply_delta_vdm(delta_file)
+        # Parse the patched data, not the stale base-only signatures.
+        vdm.parse_files()
 
         #logger.info(f"VDM Target signature version: {vdm.version}")
         #logger.info(f"VDM Target signature type   : {vdm.vdm_type}")
 
-        if args.topickle:
-            vdm.write_cache(cache_dir, name)
-            logger.info("Pickle Cache written to: {}".format(os.path.join(cache_dir, name + ".vdm.pickle")))
-        elif args.convert:
+        if args.convert:
             # convert threats to database
             convert_threats(vdm)
         elif args.asr:

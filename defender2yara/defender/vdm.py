@@ -1,5 +1,4 @@
 from typing import List, Tuple
-import pickle
 import os
 import struct
 import time
@@ -91,24 +90,6 @@ class Vdm:
     
     def get_signatures(self) -> List[BaseSig]:
         return self.signatures
-    
-    def write_cache(self, cache, name):
-        filename = os.path.join(cache, name + ".vdm.pickle")
-        with open(filename, "wb") as f:
-            pickle.dump(self, f)
-
-    def has_cache(self, cache, name) -> bool:
-        filename = os.path.join(cache, name + ".vdm.pickle")
-        return os.path.exists(filename)
-    
-    @staticmethod
-    def make_from_cache(cache, name):
-        filename = os.path.join(cache, name + ".vdm.pickle")
-        if not os.path.exists(filename):
-            raise FileNotFoundError(f"Cache file does not exist: {filename}")
-        with open(filename, "rb") as f:
-            vdm:Vdm = pickle.load(f)
-        return vdm
     
     # Raw data -> self.signatures
     @staticmethod

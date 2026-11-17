@@ -121,22 +121,6 @@ uv run defender2db --asr
 ```
 
 
-## Pickle Cache (only for testing)
-
-Convert VDM to a mega pickle `cache/mpas.vdm.pickle` and `cache/mpav.vdm.pickle`: 
-
-```sh
-uv run defender2db --topickle
-```
-
-Use the pickle instead of converting the VDM (can save a little bit of time):
-
-Also: Convert to a mega pickle: 
-```sh
-uv run defender2db --convert --frompickle
-```
-
-
 ## Usage
 
 ### Python Lua backend (Windows and Linux)

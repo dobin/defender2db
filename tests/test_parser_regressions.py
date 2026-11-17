@@ -87,8 +87,7 @@ class PatternTests(unittest.TestCase):
 
 class ContainerTests(unittest.TestCase):
     def test_main_parses_after_delta_patch(self):
-        args = SimpleNamespace(download=False, convert=True, proxy=None,
-                               frompickle=False, topickle=False, asr=False)
+        args = SimpleNamespace(download=False, convert=True, proxy=None, asr=False)
         calls = []
         with patch('defender2yara.main.load_lua_backend'), \
              patch('defender2yara.main.get_latest_signature_version', return_value='1.463.330.0'), \
