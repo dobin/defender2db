@@ -91,6 +91,11 @@ class HStrExtSig(BaseSig):
     Bounding the sub-rule loop with ``rule_numbers`` (instead of scanning for
     a zero weight) keeps several malformed-looking records from overrunning
     their payload, e.g. ``VirTool:Win32/CeeInject.gen!HP``.
+
+    ``PEHSTR_EXT``/``PEHSTR_EXT2`` bytes are PE code fragments and wildcard
+    opcodes, not strings.  Their details therefore contain only the hex
+    pattern; the other ``*HSTR_EXT`` kinds (e.g. DEX/Java string fragments)
+    keep the best-effort text rendering.
     """
 
     def __init__(self,data:bytes,ptr:int=0) -> None:
@@ -156,6 +161,10 @@ class HStrExtSig(BaseSig):
                 self.end_marker = first
 
     def to_details(self) -> dict:
+        include_text = self.sig_type not in (
+            "SIGNATURE_TYPE_PEHSTR_EXT",
+            "SIGNATURE_TYPE_PEHSTR_EXT2",
+        )
         return {
             "unknown_u16_1": self.unknown_u16_1,
             "threshold": self.threshold,
@@ -167,7 +176,10 @@ class HStrExtSig(BaseSig):
             "end_marker": self.end_marker,
             "flags": self.flags,
             "flags_present": self.flags_present,
-            "subrules": [rule.to_details() for rule in self.subrules],
+            "subrules": [
+                rule.to_details(include_text=include_text)
+                for rule in self.subrules
+            ],
         }
 
     @property

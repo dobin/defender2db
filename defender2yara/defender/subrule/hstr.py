@@ -31,17 +31,19 @@ class HStrSubRule:
 
 
 class HStrExtSubRule:
-    def to_details(self) -> dict:
-        from defender2yara.defender.signature.sigtree import decode_tree_pattern
-
+    def to_details(self, include_text: bool = True) -> dict:
         rule_bytes = getattr(self, "rule_bytes", b"")
-        return {
+        details = {
             "rule_weight": self.rule_weight,
             "rule_size": getattr(self, "rule_size", 0),
             "unknown_u8_1": getattr(self, "unknown_u8_1", None),
             "rule_bytes_hex": rule_bytes.hex(),
-            "text": decode_tree_pattern(rule_bytes),
         }
+        if include_text:
+            from defender2yara.defender.signature.sigtree import decode_tree_pattern
+
+            details["text"] = decode_tree_pattern(rule_bytes)
+        return details
 
     def __init__(self,data:bytes,ptr:int) -> None:
         if len(data[ptr:]) < 4:

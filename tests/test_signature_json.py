@@ -106,6 +106,18 @@ class SignatureJsonTests(unittest.TestCase):
         self.assertEqual(dex["name_reference"], "#Tel:Example")
         self.assertEqual(dex["subrules"], [])
 
+    def test_pehstr_ext_bytes_are_not_rendered_as_text(self):
+        pattern = b"\xe8\x00\x00\x00\x00\x5b\x52\x45\x55\x90\x01\x04"
+        payload = struct.pack("<HHH", 1, 1, 1) + b"\0"
+        payload += struct.pack("<hBB", 1, len(pattern), 3) + pattern + b"\0\0"
+        d = self.snapshot(HStrExtSig(tlv(0x78, payload)))
+        self.assertNotIn("text", d["subrules"][0])
+
+        dex_payload = struct.pack("<HHH", 1, 1, 1) + b"\0"
+        dex_payload += struct.pack("<hBB", 1, 3, 1) + b"abc" + b"\0\0"
+        dex = self.snapshot(DexHStrExtSig(tlv(0xBE, dex_payload)))
+        self.assertEqual(dex["subrules"][0]["text"], "abc")
+
     def test_static_partial_only_for_detected_incomplete_fields(self):
         cases = [
             (struct.pack("<IIIIH", 1, 2, 3, 4096, 0x5000), "Unknown STATIC hash algorithm"),
