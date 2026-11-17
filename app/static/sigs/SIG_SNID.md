@@ -38,8 +38,9 @@ is the record store's own key (a definition-identity hash). Some record families
 | `SIGNATURE_TYPE_ELFHSTR_EXT` (`0x8c`) | 16 bytes | 4 zero bytes at the front |
 | most others, e.g. KCRCEX (`0xcc`) | 20 bytes | none |
 
-So when you see `…00000000` at the end of the printed key, four of the twenty bytes are
-just padding, not part of the hash.
+So when you see `...00000000` at the end of the printed key, four of the twenty bytes are
+just padding, not part of the hash. Several keys also begin with zero bytes; strip the
+padding only when the referenced type is known to use a 16-byte key.
 
 ## The type byte is the useful part
 
@@ -61,9 +62,9 @@ SNID references:
 | `SIGNATURE_TYPE_NID64` | `0xce` | 20,635 | 64-bit id table entries |
 
 A large part of these records are **generated at scan time** (`KCRCEX`, `LOCALHASH`,
-`FASTPATH_*`, `EXPLICITRESOURCEHASH`, …) or are cloud data, so the referenced body is often
-not present in the local VDM at all. The SNID in the database is a precompiled form of the
-lookup the engine will perform later.
+`FASTPATH_*`, `EXPLICITRESOURCEHASH`, ...) or are cloud data, so the referenced body is
+often not present in the local VDM at all. The SNID in the database is a precompiled form
+of the lookup the engine will perform later.
 
 ## What the optional group name means
 
@@ -104,7 +105,7 @@ detection logic is in the referenced records (or in the cloud), not in the SNID 
 * **Do not try to "bypass the SNID".** There is nothing there to bypass. Harden the code
   path the referenced record checks, or look at the family's other signatures.
 
-## SNID vs NID
+## SNID vs NID and NID64
 
 | | SNID (`0x7e`) | NID / NID64 (`0x55` / `0xce`) |
 |---|---|---|
@@ -114,4 +115,5 @@ detection logic is in the referenced records (or in the cloud), not in the SNID 
 | Contains detection content | no (the target does) | no |
 | Optional name | group/list that reused the record | definition group that registered the id |
 
-See [NID.md](NID.md) for the numeric-id flavour.
+See [SIG_NID.md](SIG_NID.md) for the numeric-id flavour and
+[SIG_NID64.md](SIG_NID64.md) for the 64-bit variant.

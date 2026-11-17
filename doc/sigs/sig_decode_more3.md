@@ -1,8 +1,8 @@
 # Decoding NID, SIGTREE_BM and PEHSTR_EXT
 
-Follow-up to `cache/sig_type_usage.md` and `cache/sig_decode_next3.md`.
+Follow-up to `cache/sig_type_usage.md` and `doc/sigs/sig_decode_next3.md`.
 SNID and NID64 have a dedicated follow-up in
-`doc/sig_decode_snid_nid64.md`; the NID64 details below are summarised there in
+`doc/sigs/sig_decode_snid_nid64.md`; the NID64 details below are summarised there in
 more depth.
 
 Build analysed: `cache/mpengine.dll`, engine `1.1.26100.4`, signature `1.463.330.0`.
@@ -91,7 +91,7 @@ NID lookup `FUN_18015c56c` and in the STATIC builder).  In the shipped database
 5,141 of 12,109 NID64 keys resolve exactly to a record in the merged VDM stream.
 The table is otherwise the NID table design: 24-byte entries
 `{u64 key, u8 kind, u32 name-id, u32 extra}`, lookup by `(key, kind)`, and the
-same optional definition-group name.  See `doc/sig_decode_snid_nid64.md` §2.
+same optional definition-group name.  See `doc/sigs/sig_decode_snid_nid64.md` §2.
 
 ### Decoded fields (`NidSig`)
 

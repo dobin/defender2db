@@ -1,7 +1,7 @@
 # Decoding SNID and NID64
 
-Follow-up to `doc/sig_decode_more3.md` (NID, sig trees) and
-`doc/sig_decode_first3.md` (SNID, STATIC, KCRCE). This note covers the two
+Follow-up to `doc/sigs/sig_decode_more3.md` (NID, sig trees) and
+`doc/sigs/sig_decode_first3.md` (SNID, STATIC, KCRCE). This note covers the two
 remaining reference record types in the top of `cache/sig_type_usage.md`:
 
 | type | id | records in `threats.db` | threats using | what it is |
@@ -218,7 +218,7 @@ gives a very regular picture:
 Cross-check: rebuilding `crc32(payload) | type << 32 | size << 40` for every
 record in the merged stream resolves **5,141 of 12,109** NID64 keys exactly.
 4,077 of those targets are other NID64 records, 531 STATIC records, 312
-aggregator records, 123 SNID records, 90 PEHSTR_EXT records, etc. The remaining
+aggregator records, 123 SNID records, 90 trusted-publisher records, etc. The remaining
 6,968 keys point at ids that are not shipped (runtime/cloud records), or use a
 namespace whose ids are not record ids.
 
@@ -288,8 +288,8 @@ exists (for example the GoLang allow-list keys have a coincidental `0xea`
 * `app/views.py` and `app/templates/threat.html` — the decoded-record set keeps
   SNID records out of the raw dump, and the threat page has `nid`/`snid`
   sections.
-* `app/static/sigs/SNID.md` — user-facing explanation; `NID.md` extended with
-  NID64 and the NID/SNID comparison.
+* `app/static/sigs/SIG_SNID.md` — user-facing SNID explanation;
+  `SIG_NID.md` covers NID/NID64, and `SIG_NID64.md` is the focused NID64 page.
 * `tests/test_signature_three_more.py` — real vectors for the new fields;
   `tests/test_dbthreat.py` covers the legacy pickle path and UI sections.
 
