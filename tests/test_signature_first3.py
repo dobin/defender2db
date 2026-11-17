@@ -26,6 +26,15 @@ class StaticSigTests(unittest.TestCase):
         self.assertEqual(sig.partial_crc1, sig.hash1)
         self.assertEqual(sig.partial_crc3, sig.hash2)
         self.assertEqual(sig.partial_crc2, sig.hash3)
+        self.assertEqual(sig.hash_algo_label, "CRC32")
+        self.assertEqual(sig.match_mode_label, "Prefix match")
+        self.assertEqual(sig.flags_text, "0x2001")
+        self.assertEqual(sig.unknown_flag_bits, 0)
+        self.assertEqual(sig.flag_summary, "CRC32 · Prefix match")
+        self.assertEqual(
+            sig.flag_bits_text,
+            "CRC32 (0x2000) + prefix match (0x0001)",
+        )
 
     def test_md5_variant(self):
         # Virus:Win32/MPTestFile.2004
@@ -35,6 +44,8 @@ class StaticSigTests(unittest.TestCase):
         self.assertEqual(sig.file_size, 0x9000)
         self.assertEqual(sig.flags, 0x0001)
         self.assertEqual(sig.md5.hex(), "9a026f3295fefe4c4647ea5ba6bd43da")
+        self.assertEqual(sig.hash_algo_label, "MD5")
+        self.assertEqual(sig.flag_summary, "MD5 · Prefix match")
 
     def test_sha1_variant(self):
         # Virus:DOS/EICAR_Test_File
@@ -45,6 +56,8 @@ class StaticSigTests(unittest.TestCase):
         self.assertEqual(sig.file_size, 0xC6C)
         self.assertEqual(sig.flags, 0x1001)
         self.assertEqual(sig.sha1.hex(), "02a27e325ff806402628ac68780906d07f285b9a")
+        self.assertEqual(sig.hash_algo_label, "SHA-1")
+        self.assertEqual(sig.match_mode_label, "Prefix match")
 
     def test_crc32_without_low_flag(self):
         sig = StaticSig(tlv(0x67, bytes.fromhex(
@@ -54,6 +67,13 @@ class StaticSigTests(unittest.TestCase):
         self.assertEqual(sig.crc32, 0xBDC0AFEC)
         self.assertIsNone(sig.record_name)
         self.assertFalse(sig.prefix_match)
+        self.assertEqual(sig.match_mode_label, "Exact size")
+        self.assertEqual(sig.flag_summary, "CRC32 · Exact size")
+        self.assertEqual(sig.unknown_flag_bits, 0)
+        self.assertEqual(
+            sig.flag_bits_text,
+            "CRC32 (0x2000) + exact size (0x0001 clear)",
+        )
 
     def test_partial_crc_windows_collapse_at_4k(self):
         # Real record with file_size == 0x1000: all three partial CRC windows
@@ -81,6 +101,7 @@ class StaticSigTests(unittest.TestCase):
         self.assertEqual(sig.sha256, sha256)
         self.assertEqual(sig.record_name, "#ClnFile")
         self.assertIsNone(sig.crc32)
+        self.assertEqual(sig.hash_algo_label, "SHA-256")
 
     def test_truncated_sha1_variant(self):
         # 0x3000 stores the first 4 bytes of SHA-1.
@@ -92,6 +113,22 @@ class StaticSigTests(unittest.TestCase):
         self.assertEqual(sig.hash_type, "sha1_32")
         self.assertEqual(sig.sha1_32, 0xEFBEADDE)
         self.assertIsNone(sig.sha1)
+        self.assertEqual(sig.hash_algo_label, "SHA-1 (4 bytes)")
+
+    def test_unknown_flag_bits(self):
+        # Bit 1 is outside the documented bit-0 / bits-12..14 fields.
+        payload = (
+            struct.pack("<IIIIH", 0, 0, 0, 0x10, 0x2002)
+            + struct.pack("<I", 0x11223344)
+        )
+        sig = StaticSig(tlv(0x67, payload))
+        self.assertEqual(sig.hash_algo_label, "CRC32")
+        self.assertEqual(sig.unknown_flag_bits, 0x0002)
+        self.assertEqual(sig.flag_summary, "CRC32 · Exact size · unknown bits 0x0002")
+        self.assertEqual(
+            sig.flag_bits_text,
+            "CRC32 (0x2000) + exact size (0x0001 clear) + unknown bits (0x0002)",
+        )
 
     def test_named_variant(self):
         # 22-byte base + name length + "#cleanfile"

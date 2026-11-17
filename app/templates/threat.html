@@ -38,22 +38,78 @@
     {% if threat.static_signatures %}
     <section class="threat-section">
       <h2>Static file signatures <span class="badge text-bg-secondary">{{ threat.static_signatures|length }}</span></h2>
-      <p>File signatures match size and partial CRCs, plus the selected full-file hash.</p>
+      <p class="sig-intro">
+        A static signature is a <strong>known-file fingerprint</strong>: a file size plus
+        three partial CRC32 windows and one strong file hash. A <strong>prefix match</strong>
+        only fingerprints the first <em>N</em> bytes and accepts any file that is at least
+        that large; an <strong>exact size</strong> record requires the file length to match
+        exactly. <a href="/static/sigs/SIG_STATIC.md" target="_blank" rel="noopener">What do these values mean?</a>
+      </p>
+      <details class="static-signature-help">
+        <summary>How to read flags and window values</summary>
+        <ul>
+          <li><strong>File size</strong> — <em>N</em>, the number of bytes covered by the fingerprint.</li>
+          <li><strong>Prefix match / Exact size</strong> — whether the actual file may be larger than <em>N</em>.</li>
+          <li><strong>Partial CRC 1</strong> — CRC32 of the first 4 KiB (zero-padded for short files).</li>
+          <li><strong>Partial CRC 2</strong> — CRC32 of the first <em>min(N, 64 KiB)</em> bytes.</li>
+          <li><strong>Partial CRC 3</strong> — CRC32 of the last 4 KiB of the <em>N</em>-byte prefix.</li>
+          <li><strong>Flags</strong> — bit <code>0x0001</code> is the prefix-match bit; bits 12–14 select the strong hash:
+            <code>0x0000</code> MD5, <code>0x1000</code> SHA-1, <code>0x2000</code> CRC32,
+            <code>0x3000</code> SHA-1 (first 4 bytes), <code>0x4000</code> SHA-256.</li>
+        </ul>
+        <p class="mb-0">Examples: <code>0x2000</code> = CRC32 with exact size; <code>0x2001</code> = CRC32 with prefix match.</p>
+      </details>
       {% for sig in threat.static_signatures %}
       <article class="signature-card static-signature-card">
         <div class="static-signature-heading">
           <strong>{{ sig.record_name or 'Unnamed static signature' }}</strong>
-          <span class="badge text-bg-light">{{ sig.hash_type|upper }}</span>
+          <span class="badge text-bg-light">{{ sig.hash_algo_label }}</span>
+          <span class="badge text-bg-secondary">flags {{ sig.flags_text }}</span>
         </div>
-        <dl class="static-signature-details">
-          <div><dt>File size</dt><dd>{{ sig.file_size }}</dd></div>
-          <div><dt>Match mode</dt><dd>{{ 'Prefix match' if sig.prefix_match else 'Exact size' }}</dd></div>
-          <div><dt>Strong hash</dt><dd><code>{{ sig.file_hash.hex() or 'Unavailable' }}</code></dd></div>
-          <div><dt>Partial CRC 1</dt><dd><code>{{ '%08x'|format(sig.partial_crc1) }}</code></dd></div>
-          <div><dt>Partial CRC 2</dt><dd><code>{{ '%08x'|format(sig.partial_crc2) }}</code></dd></div>
-          <div><dt>Partial CRC 3</dt><dd><code>{{ '%08x'|format(sig.partial_crc3) }}</code></dd></div>
-          <div><dt>Flags</dt><dd><code>0x{{ '%04x'|format(sig.flags) }}</code></dd></div>
-        </dl>
+        <table class="static-signature-table">
+          <thead>
+            <tr><th>Key</th><th>Value</th><th>Notes</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <th scope="row">Flags</th>
+              <td><code>{{ sig.flags_text }}</code></td>
+              <td class="notes">
+                {{ sig.flag_bits_text }}
+                {% if sig.unknown_flag_bits %}<span class="badge text-bg-danger">Unknown flag bits</span>{% endif %}
+              </td>
+            </tr>
+            <tr>
+              <th scope="row">File size</th>
+              <td><code>{{ sig.file_size }}</code></td>
+              <td class="notes">
+                {{ ('file may be larger; only the first %d bytes are checked'|format(sig.file_size))
+                   if sig.prefix_match else
+                   ('file must be exactly %d bytes'|format(sig.file_size)) }}
+              </td>
+            </tr>
+            <tr>
+              <th scope="row">Strong hash</th>
+              <td><code>{{ sig.file_hash.hex() or 'Unavailable' }}</code></td>
+              <td class="notes">{{ sig.hash_algo_label }} over the first {{ sig.file_size }} bytes</td>
+            </tr>
+            <tr>
+              <th scope="row">Partial CRC 1</th>
+              <td><code>{{ '%08x'|format(sig.partial_crc1) }}</code></td>
+              <td class="notes">CRC32 of the first 4 KiB</td>
+            </tr>
+            <tr>
+              <th scope="row">Partial CRC 2</th>
+              <td><code>{{ '%08x'|format(sig.partial_crc2) }}</code></td>
+              <td class="notes">CRC32 of the first min(N, 64 KiB) bytes</td>
+            </tr>
+            <tr>
+              <th scope="row">Partial CRC 3</th>
+              <td><code>{{ '%08x'|format(sig.partial_crc3) }}</code></td>
+              <td class="notes">CRC32 of the last 4 KiB of the N-byte prefix</td>
+            </tr>
+          </tbody>
+        </table>
       </article>
       {% endfor %}
     </section>

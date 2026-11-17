@@ -41,6 +41,42 @@ hash). None of them are hashes of the signature itself.
 These are the same values the threat view calls **Partial CRC 1 / 2 / 3**, plus the size,
 the strong hash and the "Prefix match" / "Exact size" mode.
 
+## Flags
+
+`flags` is a 16-bit field, but only four bits are used:
+
+| Bits | Mask | Meaning |
+|---|---:|---|
+| 0 | `0x0001` | Prefix match: the file may be larger than `N` (only the first `N` bytes are fingerprinted). |
+| 1–11 | `0x0ffe` | Unused; zero in observed records. |
+| 12–14 | `0x7000` | Strong-hash algorithm. |
+| 15 | `0x8000` | Unused; zero in observed records. |
+
+The algorithm value (`flags & 0x7000`) is:
+
+| `flags & 0x7000` | Strong hash |
+|---:|---|
+| `0x0000` | MD5 |
+| `0x1000` | SHA-1 |
+| `0x2000` | CRC32 |
+| `0x3000` | SHA-1, first 4 bytes |
+| `0x4000` | SHA-256 |
+| `0x5000`–`0x7000` | not observed |
+
+The common combinations are therefore:
+
+* `0x2001` — CRC32 + prefix match (the most common value).
+* `0x2000` — CRC32 + exact size.
+* `0x1001` — SHA-1 + prefix match.
+* `0x1000` — SHA-1 + exact size.
+* `0x0001` — MD5 + prefix match (MD5 has no algorithm bit, so the high nibble is zero).
+
+So `0x2001` and `0x2000` are the same CRC32 signature format; `0x2001` is literally
+`0x2000 | 0x0001`. The only difference is the **prefix-match bit**. `0x2001` accepts a
+longer file, `0x2000` requires the exact size.
+Bits outside `0x7001` should be zero; if they are set, the record uses an extension this
+explanation does not cover.
+
 ## Exact size vs. "prefix" size
 
 This is the most important nuance for evasion.

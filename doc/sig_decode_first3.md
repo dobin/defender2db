@@ -102,7 +102,9 @@ Empirical checks over 262,852 unique STATIC records in the merged compendium:
 
 Only two bits are ever set: bit 0 is the size relaxation, bits 12..14 select the hash.
 `0x3000` and `0x4000` are supported by the engine (`FUN_180213c60` compares against
-`SHA1[:4]` and `SHA256`) but do not occur in signature version 1.463.330.0.
+`SHA1[:4]` and `SHA256`) but do not occur in signature version 1.463.330.0. The common
+values therefore decode as `0x2000` = CRC32 + exact size and `0x2001` = CRC32 + prefix
+match (`0x2001 == 0x2000 | 0x0001`).
 
 ### Size handling and prefix matches
 

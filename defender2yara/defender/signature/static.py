@@ -27,6 +27,31 @@ STATIC_HASH_SIZES = {
     "sha256": 32,
 }
 
+# Human labels for the UI / API.  The high nibble of ``flags`` is the only
+# algorithm selector the engine uses.
+STATIC_HASH_LABELS = {
+    "md5": "MD5",
+    "sha1": "SHA-1",
+    "crc32": "CRC32",
+    "sha1_32": "SHA-1 (4 bytes)",
+    "sha256": "SHA-256",
+}
+
+# Flag bits the engine understands: bit 0 (prefix match) and bits 12..14
+# (algorithm).  Everything else is unused and should be zero.
+STATIC_KNOWN_FLAG_MASK = 0x7001
+
+STATIC_MATCH_MODE_NOTES = {
+    True: (
+        "Prefix match: the file only needs to be at least this size. Only the "
+        "first N bytes are fingerprinted, so bytes appended after N are not checked."
+    ),
+    False: (
+        "Exact size: the file length must match exactly. Appending or truncating "
+        "even one byte prevents a match."
+    ),
+}
+
 
 class StaticSig(BaseSig):
     """
@@ -121,3 +146,50 @@ class StaticSig(BaseSig):
             if self.hash_type == "crc32" and len(self.file_hash) == 4
             else None
         )
+
+    @property
+    def hash_algo_label(self) -> str:
+        """Human-readable strong-hash name for the high nibble of ``flags``."""
+        if self.hash_type == "unknown":
+            return f"Unknown (0x{self.flags & 0xF000:04x})"
+        return STATIC_HASH_LABELS[self.hash_type]
+
+    @property
+    def match_mode_label(self) -> str:
+        return "Prefix match" if self.prefix_match else "Exact size"
+
+    @property
+    def match_mode_note(self) -> str:
+        """One-sentence explanation of the size / prefix-match check."""
+        return STATIC_MATCH_MODE_NOTES[self.prefix_match]
+
+    @property
+    def flags_text(self) -> str:
+        return f"0x{self.flags:04x}"
+
+    @property
+    def unknown_flag_bits(self) -> int:
+        """Flag bits outside the documented bit-0 / bits-12..14 fields."""
+        return self.flags & ~STATIC_KNOWN_FLAG_MASK
+
+    @property
+    def flag_summary(self) -> str:
+        """Short decoding such as ``CRC32 · Prefix match``."""
+        text = f"{self.hash_algo_label} · {self.match_mode_label}"
+        if self.unknown_flag_bits:
+            text += f" · unknown bits 0x{self.unknown_flag_bits:04x}"
+        return text
+
+    @property
+    def flag_bits_text(self) -> str:
+        """Explicit bit decomposition, e.g. ``CRC32 (0x2000) + prefix match (0x0001)``."""
+        algo_bits = self.flags & 0x7000
+        parts = [f"{self.hash_algo_label} (0x{algo_bits:04x})"]
+        parts.append(
+            "prefix match (0x0001)" if self.prefix_match
+            else "exact size (0x0001 clear)"
+        )
+        if self.unknown_flag_bits:
+            parts.append(f"unknown bits (0x{self.unknown_flag_bits:04x})")
+        return " + ".join(parts)
+

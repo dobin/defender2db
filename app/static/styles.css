@@ -235,8 +235,83 @@
     overflow-wrap: anywhere;
   }
 
+  .static-signature-table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  .static-signature-table th,
+  .static-signature-table td {
+    padding: 0.3em 0.75em 0.3em 0;
+    border-top: 1px solid var(--bs-border-color, #dee2e6);
+    text-align: left;
+    vertical-align: top;
+  }
+
+  .static-signature-table thead th {
+    border-top: 0;
+    border-bottom: 1px solid var(--bs-border-color, #dee2e6);
+    color: var(--bs-secondary-color, #6c757d);
+    font-size: 0.8rem;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+
+  .static-signature-table tbody tr:first-child th,
+  .static-signature-table tbody tr:first-child td {
+    border-top: 0;
+  }
+
+  .static-signature-table tbody th {
+    width: 1%;
+    white-space: nowrap;
+    color: var(--bs-secondary-color, #6c757d);
+    font-size: 0.85rem;
+    font-weight: 600;
+  }
+
+  .static-signature-table td {
+    font-size: 0.9rem;
+    overflow-wrap: anywhere;
+  }
+
+  .static-signature-table .notes {
+    color: var(--bs-secondary-color, #6c757d);
+  }
+
+  .static-signature-table code {
+    white-space: nowrap;
+  }
+
   .nid-intro {
     max-width: 60rem;
+  }
+
+  .sig-intro {
+    max-width: 60rem;
+  }
+
+  .static-signature-help {
+    max-width: 60rem;
+    margin: 0.75em 0 1.25em;
+  }
+
+  .static-signature-help summary {
+    cursor: pointer;
+    color: var(--bs-link-color, #0d6efd);
+  }
+
+  .static-signature-help ul {
+    margin: 0.5em 0 0.35em;
+    padding-left: 1.25em;
+  }
+
+  .static-signature-help li {
+    margin-bottom: 0.25em;
+  }
+
+  .static-signature-details .text-muted {
+    font-size: 0.85rem;
   }
 
   .nid-note {

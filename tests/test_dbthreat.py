@@ -96,8 +96,11 @@ class NiceThreatTests(unittest.TestCase):
             for text in ('DEX string signatures', 'PE extended string signatures',
                          'HSTR:Example&amp;SIGATTR:Example', 'os_build &lt; 0x4563',
                          'No inline conditions', 'X555', 'rule example', 'print(',
-                         'Static file signatures', '#Clean', 'MD5', 'Prefix match',
-                         'Partial CRC 1', '00000001'):
+                         'Static file signatures', '#Clean', 'MD5',
+                         'Partial CRC 1', '00000001', 'static-signature-table',
+                         '0x0001', 'MD5 (0x0000) + prefix match (0x0001)',
+                         'CRC32 of the first 4 KiB',
+                         '<th>Key</th>', '<th>Value</th>', '<th>Notes</th>'):
                 self.assertIn(text, html)
             self.assertIn('&lt;script&gt;', html)
             self.assertNotIn('<script>alert(1)</script>', html)
