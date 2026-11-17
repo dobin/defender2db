@@ -1,5 +1,7 @@
 """Model Context Protocol server exposing the threat REST API operations."""
 
+import os
+
 from mcp.server.fastmcp import FastMCP
 from defender2yara.threat_api import get_signature_details, get_raw_record, RawUnavailableError
 from defender2yara.threat_api import get_threat_details
@@ -46,6 +48,15 @@ def get_raw_signature(signature_id: int) -> dict:
 
 def main() -> None:
     mcp.run(transport="stdio")
+
+
+def main_http() -> None:
+    from dotenv import load_dotenv
+
+    load_dotenv()
+    mcp.settings.host = os.environ.get('MCP_HOST', '127.0.0.1')
+    mcp.settings.port = int(os.environ.get('MCP_PORT', '8000'))
+    mcp.run(transport='streamable-http')
 
 
 if __name__ == "__main__":

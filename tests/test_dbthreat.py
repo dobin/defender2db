@@ -366,6 +366,20 @@ class PersistenceTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'schema.*rebuild'):
             search_threats(NAME, self.path)
 
+    def test_index_shows_configured_rest_and_mcp_endpoints(self):
+        from app.views import views
+        app = Flask(__name__, template_folder=str(Path(__file__).resolve().parents[1] / 'app' / 'templates'))
+        app.config.update(TESTING=True, DATABASE=self.path)
+        app.register_blueprint(views)
+        self.publish()
+        with patch.dict('os.environ', {'DOMAIN': 'https://example.test/'}):
+            response = app.test_client().get('/')
+        self.assertEqual(response.status_code, 200)
+        page = response.get_data(as_text=True)
+        self.assertIn('https://example.test/api/threats?threat_name=...', page)
+        self.assertIn('https://example.test/mcp', page)
+        self.assertIn('class="card mt-4"', page)
+
     def test_flask_consumers_address_duplicate_occurrences_without_loading_raw(self):
         vdm = synthetic_vdm(threat_records([tlv(0, b'first')]) + threat_records([tlv(0, b'second')], defender_id=124))
         self.publish(include_raw=True, sources=[vdm])
