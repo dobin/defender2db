@@ -4,8 +4,10 @@
   <dt>Phase</dt><dd>{{ d.get('phase_name') }} ({{ d.get('script_type') }})</dd>
   {% if d.get('record_name') %}<dt>Engine label</dt><dd>{{ d.get('record_name') }}</dd>{% endif %}
   <dt>Body</dt><dd>{{ d.get('body_format') }}, {{ d.get('body_size') }} bytes</dd>
-  {% if d.get('code_encoding') == 'encoded' %}
-  <dt>Bytecode</dt><dd>non-standard instruction encoding, not Lua 5.1 (decompiler skipped)</dd>
+  {% if d.get('code_encoding') == 'substituted' %}
+  <dt>Bytecode</dt><dd>decoded from the headerless instruction encoding</dd>
+  {% elif d.get('code_encoding') == 'encoded' %}
+  <dt>Bytecode</dt><dd>unrecognised instruction encoding, not Lua 5.1 (decompiler skipped)</dd>
   {% endif %}
   {% if c %}
     <dt>Chunk</dt><dd>Lua {{ c.get('version') }}, {{ c.get('functions') }} function(s), {{ c.get('instructions') }} instructions, {{ c.get('string_count') }} string constant(s)</dd>

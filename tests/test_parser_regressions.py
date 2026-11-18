@@ -14,6 +14,7 @@ from defender2yara.defender.lua_backend import load_lua_backend, decompile_data
 from defender2yara.defender.luaparse import fixup_lua_data
 from defender2yara.defender.signature.base import BaseSig
 from defender2yara.defender.signature.lua import LuaSig
+from defender2yara.defender.signature.lua_crypto import encode_word
 from defender2yara.defender.vdm import Vdm
 from defender2yara.main import get_lua_from_threat
 from defender2yara.main import main
@@ -214,12 +215,35 @@ class LuaTests(unittest.TestCase):
         self.assertEqual(diagnostics, [])
         self.assertIn(b"return", scripts[0])
 
-    def test_encoded_headerless_body_skips_decompiler(self):
-        # The shipped headerless records keep the wrapper but encode the
-        # instruction words; decode them as such and never call the Lua 5.1
-        # decompiler (which would log two or three warnings per record).
+    def test_encoded_headerless_body_is_decoded_before_decompiling(self):
+        # The shipped headerless records substitute their instruction words.
+        # They must be decoded before reaching the Lua 5.1 decompiler.
         chunk = bytearray(mplua_chunk())
-        chunk[32:40] = struct.pack('<II', 0x6305C366, 0x6305C366)
+        words = struct.unpack_from('<II', chunk, 32)
+        struct.pack_into('<II', chunk, 32, *(encode_word(word) for word in words))
+        body = b"\x01" + b"\0" * 11 + bytes(chunk[12:])
+        name = b"Bedep\0"
+        attributes = b"Includes\0Bedep\0"
+        payload = bytes([len(name), 0x11]) + struct.pack("<HI", len(attributes), len(body))
+        payload += name + attributes + body
+        sig = LuaSig(record(0xBD, payload))
+        self.assertEqual(sig.body_format, "mplua_headerless")
+        self.assertEqual(sig.code_encoding, "substituted")
+        self.assertEqual(sig.lua_bytecode, mplua_chunk())
+        self.assertEqual(sig.chunk.invalid_opcode_count, 0)
+        threat = SimpleNamespace(threat_name="!InfrastructureShared", threat_id=1, signatures=[sig])
+        sig.offset = 0
+        diagnostics = []
+        with self.assertNoLogs("defender2yara", level="WARNING"):
+            scripts = get_lua_from_threat(threat, diagnostics)
+        self.assertEqual(diagnostics, [])
+        self.assertIn(b"return", scripts[0])
+
+    def test_undecodable_headerless_body_skips_decompiler(self):
+        # A word the cipher cannot turn into valid Lua 5.1 stays flagged and is
+        # never handed to the decompiler.
+        chunk = bytearray(mplua_chunk())
+        chunk[32:40] = struct.pack('<II', 0x3F3F3F3F, 0x3F3F3F3F)
         body = b"\x01" + b"\0" * 11 + bytes(chunk[12:])
         name = b"Bedep\0"
         attributes = b"Includes\0Bedep\0"

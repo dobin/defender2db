@@ -308,14 +308,48 @@ Normal header (12 bytes):
 The headerless variant replaces those 12 bytes with
 `01 00 00 00 00 00 00 00 00 00 00 00`; everything after it is identical, so a
 decoder can simply restore the normal header and undump the rest.  **The code
-array of the shipped headerless records is nevertheless not plain Lua 5.1**:
-every one of the 154 records has instruction words with opcodes in the unused
-38..63 range (about a third of the words), and every function's last word is the
-fixed `0x6305c366`, i.e. the encoded `RETURN`.  None of the 2.17M instructions
-in normal-header records does this.  The wrapper, prototypes, constants and
-debug section still decode, so `LuaSig` reports `code_encoding = "encoded"` and
-the converter skips decompilation for these records instead of feeding the code
-to a Lua 5.1 decompiler.
+array of the shipped headerless records is substituted**, while the wrapper,
+prototypes, constants and debug section stay plain: every one of the 154 records
+has instruction words with opcodes in the unused 38..63 range (about a third of
+the words), and every function's last word is the fixed `0x6305c366`, i.e. the
+encoded `RETURN`.  None of the 2.17M instructions in normal-header records does
+this.  `LuaSig` decodes the arrays, validates the result and reports
+`code_encoding = "substituted"`; only when decoding and validation fail does it
+keep `"encoded"` and let the converter skip the record.
+
+### Headerless instruction cipher
+
+The transformation is per 32-bit little-endian word, bytes low→high, with a
+chain that restarts at zero for every word.  It uses the engine's 256-byte
+substitution table at `0x180dc18a0` (`mpengine.dll` 1.1.26100.4), the same table
+`Ob*`-attribute obfuscation uses (`FUN_1805afc44`):
+
+```
+b0,b1,b2,b3 = stored bytes 0..3
+p0 = TABLE[b0]
+p1 = TABLE[b1] ^ b0
+p2 = TABLE[b2] ^ b1
+p3 = TABLE[b3] ^ b2
+instruction = p0 | p1<<8 | p2<<16 | p3<<24
+```
+
+The feedback byte is the *stored* byte (`prev = b[i]`), not the substituted one.
+`TABLE` is a permutation of 0..255 but not an involution, so encoding uses its
+inverse permutation.  Spot checks: `TABLE[0x66] = 0x1e`, `TABLE[0xc3] = 0x66`,
+`TABLE[0x05] = 0x43`, `TABLE[0x63] = 0x05`, which maps the stored `0x6305c366`
+to `RETURN 0 1` (`0x0080001e`).  After decoding all 32,042 instructions of the
+154 records have a valid Lua 5.1 opcode; 144 decompile cleanly with the bundled
+decompiler.  The table and cipher live in
+`defender2yara/defender/signature/lua_crypto.py`.
+
+The cipher was recovered from cross-version plaintext pairs (matching functions
+of headerless and normal-header records by code length, signature and string
+constants, then bootstrapping a conflict-free ciphertext→plaintext map), not
+from a formula fit on the corpus.  The hard-coded table was validated byte for
+byte against the installed `mpengine.dll` 1.1.26100.4 image (RVA `0xdc18a0`).
+If a future engine build rotates the table, re-extract it from the same RVA and
+re-validate with the `RETURN` word above.
+
 
 The undumper (`FUN_180a9a76c`) reads a classic Lua 5.1 `Function`:
 
@@ -379,11 +413,13 @@ Top string constants across the corpus: `mp`, `INFECTED`, `CLEAN`,
 whole chunk (prototypes, instructions, constants, debug info).  The existing
 pipeline additionally decompiles the chunk with the bundled Python Lua
 decompiler (`defender2yara/defender/lua_backend.py`); `LuaSig` exposes
-`lua_chunk_data` with the restored header, and normal-header records decompile
-normally.  The 154 headerless records are reported as
-`code_encoding = "encoded"` (see *The Lua chunk*) and are not sent to the
-decompiler, because their instruction array is not Lua 5.1 — attempting it only
-produced one decompiler and one disassembler warning per record.
+`lua_chunk_data` with the restored header and the decoded instruction arrays, so
+both header variants decompile normally.  The 154 headerless records are decoded
+to valid Lua 5.1 (`code_encoding = "substituted"`) and 144 of them decompile
+cleanly; the other ten hit a limitation of the bundled decompiler, so the
+existing disassembly fallback in `main.py` produces a bytecode listing.  Only a
+chunk whose instruction array cannot be decoded and validated remains
+`code_encoding = "encoded"` and is skipped by the converter.
 
 A Lua record is detection *logic*, so it cannot become a byte-pattern YARA
 rule.  The useful artefacts are the phase, the attribute list, the constants

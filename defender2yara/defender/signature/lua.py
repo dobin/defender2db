@@ -25,14 +25,15 @@ dword of ``1`` as that headerless form and skips 12 bytes either way, so the
 undumped function follows in both cases.  The loader (``FUN_180a9a76c``) drops
 all debug information, but the serialised chunk still contains it.
 
-Only the normal-header form stores plain Lua 5.1 instruction words.  Every one
-of the headerless records in the shipped database carries a *non-standard*
-instruction array: about a third of the words have an opcode outside 0..37
-(``0x6305c366`` is the fixed last word of every function, i.e. the encoded
-``RETURN``), while none of the 2.2M instructions in normal-header records does.
-The wrapper, constants and nested prototypes still decode normally, so
-``code_encoding`` reports ``"encoded"`` for those chunks and callers must not
-hand them to a Lua 5.1 decompiler.
+The normal-header form stores plain Lua 5.1 instruction words.  The headerless
+records in the shipped database substitute the ``code`` arrays with the
+byte-wise chained cipher from :mod:`lua_crypto` (``0x6305c366`` is the fixed
+last word of every function, i.e. the encoded ``RETURN``), while the wrapper,
+constants, prototypes and debug section stay plain.  ``LuaSig`` decodes those
+words and validates the result; ``code_encoding`` is ``"substituted"`` for a
+successfully decoded chunk, ``"plain"`` when the words were already ordinary
+Lua 5.1 and ``"encoded"`` only when the array cannot be decoded (callers must
+not hand that last case to a Lua 5.1 decompiler).
 
 This module decodes the wrapper, splits the attributes into name/value pairs and
 walks the whole Lua chunk (function prototypes, code, constants), so the
@@ -42,6 +43,7 @@ script's literals and structure are available without running a decompiler.
 import struct
 
 from .base import BaseSig
+from .lua_crypto import decode_word
 from defender2yara.defender.constant import SIG_TYPES
 
 
@@ -418,6 +420,62 @@ def _decode_header(header: bytes) -> dict:
     }
 
 
+def decode_chunk_code(data: bytes) -> bytes:
+    """Return a copy of ``data`` with every ``code`` word decoded.
+
+    Only the serialised ``code`` arrays are transformed; everything else
+    (wrapper, constants, prototypes, debug info) is copied unchanged.  The
+    walker mirrors :func:`_read_function` and raises :class:`ValueError` when
+    the chunk is truncated or the arrays do not cover the buffer exactly.
+    """
+    if len(data) < LUA_HEADER_SIZE:
+        raise ValueError(f"Truncated Lua header: {len(data)} bytes")
+    if data[:4] != LUA_HEADER[:4]:
+        raise ValueError(f"Invalid Lua signature: {data[:4].hex()}")
+
+    decoded = bytearray(data)
+    reader = _Reader(data, LUA_HEADER_SIZE)
+
+    def walk(depth: int = 0) -> None:
+        if depth > MAX_PROTO_DEPTH:
+            raise ValueError(f"Lua chunk nests functions deeper than {MAX_PROTO_DEPTH}")
+        reader.string()                 # source name
+        reader.take(12)                 # lines, nups, params, vararg, stack
+        for _ in range(reader.u32()):
+            offset = reader.position
+            struct.pack_into(
+                "<I", decoded, offset, decode_word(struct.unpack_from("<I", data, offset)[0])
+            )
+            reader.take(4)
+        for _ in range(reader.u32()):   # constants
+            tag = reader.u8()
+            if tag == LUA_TNIL:
+                continue
+            if tag == LUA_TBOOLEAN:
+                reader.take(1)
+            elif tag == LUA_TNUMBER:
+                reader.take(8)
+            elif tag == LUA_TSTRING:
+                reader.string()
+            else:
+                raise ValueError(
+                    f"Unknown Lua constant tag {tag} at offset {reader.position - 1}"
+                )
+        for _ in range(reader.u32()):   # nested prototypes
+            walk(depth + 1)
+        reader.take(4 * reader.u32())   # line info
+        for _ in range(reader.u32()):   # debug locals
+            reader.string()
+            reader.take(8)
+        for _ in range(reader.u32()):   # debug upvalue names
+            reader.string()
+
+    walk()
+    if reader.remaining:
+        raise ValueError(f"{reader.remaining} bytes after the Lua chunk")
+    return bytes(decoded)
+
+
 def split_attributes(raw: bytes) -> tuple[list[dict], bytes]:
     """Split the attribute blob into NUL-separated name/value pairs.
 
@@ -489,15 +547,14 @@ class LuaSig(BaseSig):
 
         if self.body.startswith(LUA_HEADER):
             self.body_format = "lua"
-            self.lua_chunk_data = self.body
+            self.lua_chunk_raw = self.body
         elif self.body[:4] == HEADERLESS_LUA_MARKER[:4]:
             self.body_format = "mplua_headerless"
             # The engine skips the 12-byte pseudo header and undumps the rest.
-            self.lua_chunk_data = LUA_HEADER + self.body[LUA_HEADER_SIZE:]
+            self.lua_chunk_raw = LUA_HEADER + self.body[LUA_HEADER_SIZE:]
         else:
             self.body_format = "unknown"
-            self.lua_chunk_data = None
-        self.lua_bytecode = self.lua_chunk_data
+            self.lua_chunk_raw = None
 
         self.attributes, self.attribute_data = split_attributes(self.attributes_raw)
         self.attribute_strings = [
@@ -508,25 +565,57 @@ class LuaSig(BaseSig):
         ]
 
         self.chunk: LuaChunk | None = None
+        self.lua_chunk_data: bytes | None = self.lua_chunk_raw
+        self.lua_bytecode: bytes | None = self.lua_chunk_raw
         self.code_encoding = "unknown"
         self.decode_warnings = []
-        if self.lua_chunk_data is None:
+        if self.lua_chunk_raw is None:
             self.decode_warnings.append("Unrecognized Lua script body")
         else:
-            try:
-                self.chunk = parse_lua_chunk(self.lua_chunk_data)
-            except (ValueError, struct.error) as error:
-                self.decode_warnings.append(f"Invalid Lua chunk: {error}")
-        if self.chunk is not None:
-            if self.chunk.is_plain_bytecode:
+            plain = self._parse_stored_chunk()
+            if plain:
                 self.code_encoding = "plain"
-            else:
-                self.code_encoding = "encoded"
-                self.decode_warnings.append(
-                    "Non-standard Lua bytecode: "
-                    f"{self.chunk.invalid_opcode_count} of "
-                    f"{self.chunk.instruction_count} instructions have an invalid opcode"
-                )
+            elif self.body_format == "mplua_headerless":
+                self._decode_headerless_chunk()
+
+    def _parse_stored_chunk(self) -> bool:
+        """Parse the chunk as stored; true when its instruction words are plain."""
+        try:
+            self.chunk = parse_lua_chunk(self.lua_chunk_data)
+        except (ValueError, struct.error) as error:
+            self.decode_warnings.append(f"Invalid Lua chunk: {error}")
+            return False
+        return self.chunk.is_plain_bytecode
+
+    def _decode_headerless_chunk(self) -> None:
+        """Decode the substituted ``code`` arrays of a headerless chunk.
+
+        Only reached when the stored words are not plain Lua 5.1, so a
+        marker-only body with plain words (e.g. a synthetic chunk) is never
+        corrupted.  A decoded chunk is accepted only when it parses and has no
+        invalid opcode; otherwise the stored words and their warning are kept.
+        """
+        try:
+            decoded = decode_chunk_code(self.lua_chunk_data)
+            chunk: LuaChunk | None = parse_lua_chunk(decoded)
+        except (ValueError, struct.error):
+            chunk = None
+        if chunk is not None and chunk.is_plain_bytecode:
+            self.lua_chunk_data = decoded
+            self.lua_bytecode = decoded
+            self.chunk = chunk
+            self.code_encoding = "substituted"
+            return
+        if self.chunk is not None:
+            self.code_encoding = "encoded"
+            self.decode_warnings.append(self._invalid_bytecode_warning())
+
+    def _invalid_bytecode_warning(self) -> str:
+        return (
+            "Non-standard Lua bytecode: "
+            f"{self.chunk.invalid_opcode_count} of "
+            f"{self.chunk.instruction_count} instructions have an invalid opcode"
+        )
 
     def to_details(self) -> dict:
         chunk = self.chunk.to_details() if self.chunk is not None else None

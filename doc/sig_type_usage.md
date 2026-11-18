@@ -650,17 +650,18 @@ The body is a normal Lua 5.1 chunk (`FUN_1803e6f18` → `FUN_180a9a76c`): functi
 prototypes, 32-bit string lengths, **signed integer** number constants and
 debug info (dropped by the loader).  `LuaSig` walks all of it: 69,057 function
 prototypes, 2,241,907 instructions and 631,623 string constants in this DB.  The
-154 headerless (`01 00 …`) records keep the same wrapper and readable
-constants, but their instruction array is not Lua 5.1 (opcodes outside 0..37 and
-a fixed encoded `RETURN` word), so they are marked `code_encoding = "encoded"`
-and not decompiled.  A script is detection logic, so it does not become a
-YARA byte pattern; the decompiled source and the constants are the useful
-output.
+154 headerless (`01 00 …`) records keep the same wrapper but substitute their
+`code` arrays with a byte-wise chained cipher (the engine's 256-byte table at
+`0x180dc18a0`); `LuaSig` reverses it, so all 154 decode to valid Lua 5.1
+(`code_encoding = "substituted"`) and 144 decompile cleanly.  A script is
+detection logic, so it does not become a YARA byte pattern; the decompiled source
+and the constants are the useful output.
 
 Decoders: `defender2yara/defender/signature/macro_pcode.py` (`MacroPcodeSig`)
 and the rewritten `defender2yara/defender/signature/lua.py` (`LuaSig`, plus
-`parse_lua_chunk`, `phase_name` and `split_attributes`).  Wired into
-`Vdm.decode_record`; tests in `tests/test_signature_macro_pcode_lua.py`.
+`parse_lua_chunk`, `phase_name` and `split_attributes`; the instruction cipher
+lives in `lua_crypto.py`).  Wired into `Vdm.decode_record`; tests in
+`tests/test_signature_macro_pcode_lua.py`.
 
 ## Tenth round: command-line HSTR and DEX HSTR
 

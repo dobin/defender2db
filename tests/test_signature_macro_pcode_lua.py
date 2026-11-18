@@ -8,6 +8,9 @@ from defender2yara.defender.signature import LuaSig, MacroPcodeSig
 from defender2yara.defender.signature.lua import (
     LUA_HEADER, parse_lua_chunk, phase_name,
 )
+from defender2yara.defender.signature.lua_crypto import (
+    INSTRUCTION_TABLE, decode_word, encode_word,
+)
 from defender2yara.defender.signature.macro_pcode import (
     defender_crc16, defender_crc32, routine_key,
 )
@@ -37,6 +40,32 @@ MACRO64_NAMED = bytes.fromhex(
 MACRO32_NAMED = bytes.fromhex("14a406eb37d33719067955672356697275733a5839374d2f4c61726f75782e455200")
 # Virus:X97M/Dechanop.A - third key unset.
 MACRO32 = bytes.fromhex("3fa9fd4127335e9fffffffff")
+
+# !InfrastructureShared "Bedep": a headerless body whose code array is
+# substituted.  It decodes to `function(...) Infrastructure_ScanBedep(true) end`.
+BEDEP_HEADERLESS_BODY = bytes.fromhex(
+    "0100000000000000000000000000000000000000000000000000020204000000"
+    "63319ab1143d62996b7619bd66c30563010000000419000000496e6672617374"
+    "727563747572655f5363616e4265646570000000000000000000000000000000"
+    "0000"
+)
+
+
+class LuaInstructionCipherTests(unittest.TestCase):
+    def test_table_is_the_engine_table(self):
+        self.assertEqual(len(INSTRUCTION_TABLE), 256)
+        self.assertEqual(sorted(INSTRUCTION_TABLE), list(range(256)))
+        # Spot checks: RETURN 0 1 (0x0080001e) is stored as 0x6305c366.
+        self.assertEqual(INSTRUCTION_TABLE[0x66], 0x1E)
+        self.assertEqual(INSTRUCTION_TABLE[0xC3], 0x66)
+        self.assertEqual(INSTRUCTION_TABLE[0x05], 0x43)
+        self.assertEqual(INSTRUCTION_TABLE[0x63], 0x05)
+
+    def test_word_round_trip(self):
+        self.assertEqual(decode_word(0x6305C366), 0x0080001E)
+        for word in (0, 1, 0x0080001E, 0xFFFFFFFF, 0x12345678):
+            with self.subTest(word=hex(word)):
+                self.assertEqual(decode_word(encode_word(word)), word)
 
 
 class MacroPcode64Tests(SignatureSnapshotMixin, unittest.TestCase):
@@ -181,27 +210,39 @@ class LuaStandaloneTests(SignatureSnapshotMixin, unittest.TestCase):
         self.assertEqual(d["summary"], sig.describe())
 
     def test_headerless_variant(self):
+        # A marker-only body with plain words must survive the decode attempt.
         body = b"\x01" + b"\0" * 11 + lua_function()
         sig = LuaSig(tlv(0xBD, lua_payload(body=body)))
         self.assertEqual(sig.body_format, "mplua_headerless")
         self.assertEqual(sig.lua_chunk_data, LUA_HEADER + lua_function())
         self.assertIsNotNone(sig.chunk)
+        self.assertEqual(sig.code_encoding, "plain")
         self.assertEqual(sig.decode_status, "decoded")
 
-    def test_headerless_encoded_bytecode_is_not_plain(self):
-        # Shipped headerless records keep the normal wrapper but encode the
-        # instruction words: 0x6305c366 is the fixed encoded RETURN.  The
-        # wrapper still parses, so only the code encoding is flagged.
-        body = b"\x01" + b"\0" * 11 + lua_function(code=(0x6305C366,))
+    def test_headerless_encoded_bytecode_is_decoded(self):
+        # Shipped headerless records keep the normal wrapper but substitute the
+        # instruction words; this is the "Bedep" body from the shipped DB.
+        sig = LuaSig(tlv(0xBD, lua_payload(body=BEDEP_HEADERLESS_BODY)))
+        self.assertEqual(sig.body_format, "mplua_headerless")
+        self.assertIsNotNone(sig.chunk)
+        self.assertEqual(sig.code_encoding, "substituted")
+        self.assertEqual(sig.decode_status, "decoded")
+        self.assertEqual(sig.chunk.invalid_opcode_count, 0)
+        self.assertEqual(sig.chunk.instruction_count, 4)
+        self.assertEqual(sig.chunk.string_constants, ["Infrastructure_ScanBedep"])
+        self.assertEqual(sig.chunk.root.code[-1], 0x0080001E)  # RETURN 0 1
+        details = sig.to_details()
+        self.assertEqual(details["code_encoding"], "substituted")
+        self.assertEqual(details["chunk"]["invalid_opcodes"], 0)
+
+    def test_headerless_undecodable_bytecode_is_flagged(self):
+        body = b"\x01" + b"\0" * 11 + lua_function(code=(0x3F3F3F3F,))
         sig = LuaSig(tlv(0xBD, lua_payload(body=body)))
         self.assertEqual(sig.body_format, "mplua_headerless")
         self.assertIsNotNone(sig.chunk)
         self.assertEqual(sig.code_encoding, "encoded")
         self.assertEqual(sig.decode_status, "partial")
         self.assertIn("Non-standard Lua bytecode", sig.decode_warnings[0])
-        details = sig.to_details()
-        self.assertEqual(details["code_encoding"], "encoded")
-        self.assertEqual(details["chunk"]["invalid_opcodes"], 1)
 
     def test_invalid_chunk_is_partial(self):
         sig = LuaSig(tlv(0xBD, lua_payload(body=b"\x1bLuaQ\x00\x01\x04\x08\x04\x08\x01" + b"\0" * 8)))

@@ -62,9 +62,11 @@ The phase names line up with the scripts: `UACTrigger` holds
 The body is a normal Lua 5.1 chunk: a 12-byte header (`\x1bLuaQ…`) followed by a
 function prototype with instructions, constants and nested functions. A second
 variant replaces the header with `01 00 00 00 …` ("headerless"); the engine
-accepts both, but the headerless records in this database encode the instruction
-words (their opcodes are outside 0..37), so only their wrapper, function
-structure and constants can be decoded.
+accepts both. The headerless records in this database additionally substitute
+their `code` arrays with a byte-wise chained cipher (the engine's 256-byte table
+at `0x180dc18a0`, the same one used for `Ob*` attributes); everything else is
+plain. The decoder reverses the cipher, so those scripts decompile like the
+normal-header ones.
 
 Two quirks matter when reading chunks: string lengths are 32-bit, and the
 header's `integral` byte is `1`, so number constants are signed integers, not
@@ -79,9 +81,11 @@ doubles.
 | in real threats | 452 (anonymous) |
 | function prototypes / instructions | 69,057 / 2,241,907 |
 | string constants | 631,623 |
-| headerless records with encoded instructions | 154 |
+| headerless records with substituted code | 154 (all decoded) |
 
-The decoder is `defender2yara/defender/signature/lua.py` (`LuaSig`), which also
-walks the chunk so the phase, attributes, function structure and string
-constants are visible. The project additionally decompiles the chunk to Lua
-source. The full engine analysis is in `doc/sigs/sig_decode_macro_pcode_lua.md`.
+The decoder is `defender2yara/defender/signature/lua.py` (`LuaSig`, with the
+cipher in `lua_crypto.py`), which also walks the chunk so the phase, attributes,
+function structure and string constants are visible. The project additionally
+decompiles the chunk to Lua source (144 of the 154 headerless scripts; the rest
+hit a limitation of the bundled decompiler and fall back to disassembly). The
+full engine analysis is in `doc/sigs/sig_decode_macro_pcode_lua.md`.
