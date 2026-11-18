@@ -211,6 +211,47 @@
     overflow-wrap: anywhere;
   }
 
+  .version-check-heading {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.5em;
+    margin-bottom: 0.5em;
+  }
+
+  .version-check-heading strong {
+    font-size: 1.02rem;
+  }
+
+  .version-check-explanation {
+    max-width: 60rem;
+    margin-bottom: 0.35em;
+  }
+
+  .version-check-note {
+    max-width: 60rem;
+    color: var(--bs-secondary-color, #6c757d);
+    font-size: 0.9rem;
+    margin-bottom: 0.75em;
+  }
+
+  .version-check-table {
+    max-width: 60rem;
+  }
+
+  .version-check-table th {
+    width: 10rem;
+  }
+
+  .gated-by {
+    max-width: 60rem;
+    margin-bottom: 0.5em;
+    padding: 0.4em 0.65em;
+    border-left: 3px solid var(--bs-warning, #ffc107);
+    background: rgba(255, 193, 7, 0.08);
+    font-size: 0.9rem;
+  }
+
   .signature-table td {
     vertical-align: top;
   }

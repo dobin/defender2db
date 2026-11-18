@@ -6,7 +6,12 @@ from defender2yara.defender.signature.aggregator import (
     encode_aggregator,
 )
 from defender2yara.defender.signature.hstr import DexHStrExtSig
-from defender2yara.defender.signature.versioncheck import VersionCheckSig
+from defender2yara.defender.signature.versioncheck import (
+    VersionCheckSig,
+    describe_version_check,
+    enrich_versioncheck_details,
+)
+from defender2yara.threat_api import annotate_version_gates
 
 
 def tlv(sig_type: int, payload: bytes) -> bytes:
@@ -151,6 +156,91 @@ class VersionCheckTests(unittest.TestCase):
         sig = VersionCheckSig(tlv(0x7A, bytes.fromhex("1300000003000600")))
         self.assertEqual(sig.check, ("engine_field_0xb60", ">"))
         self.assertFalse(sig.is_unconditional)
+
+    def test_pua_flag_is_named_and_explained(self):
+        # PUA:Win32/Puwaders.C!ml
+        sig = VersionCheckSig(tlv(0x7A, bytes.fromhex("3400000001000000")))
+        self.assertEqual(sig.summary, "PUA protection must be enabled")
+        self.assertIn("MpEnablePUS", sig.explanation)
+        self.assertEqual(sig.interpretation["target_kind"], "engine_flag")
+        self.assertFalse(sig.interpretation["always_true"])
+        d = sig.to_details()
+        self.assertEqual(d["summary"], sig.summary)
+        self.assertEqual(d["description"], sig.describe())
+        self.assertEqual(d["value_text"], "enabled")
+
+    def test_reset_gate_explains_that_it_is_not_a_detection(self):
+        sig = VersionCheckSig(tlv(0x7A, bytes.fromhex("0000000000000000")))
+        d = sig.to_details()
+        self.assertTrue(d["always_true"])
+        self.assertIn("switch loading back on", d["explanation"])
+        self.assertIn("does not mean", d["explanation"])
+        self.assertEqual(d["target_kind"], "unconditional")
+
+    def test_os_build_value_names_windows_release(self):
+        sig = VersionCheckSig(tlv(0x7A, bytes.fromhex("26000000bb470000")))
+        self.assertEqual(sig.interpretation["value_text"], "18363 (Windows 10 1909)")
+        self.assertIn("Windows build must be less than", sig.summary)
+
+    def test_packed_windows_version_is_decoded(self):
+        info = describe_version_check(0x14, 0x0A0000)
+        self.assertEqual(info["value_text"], "10.0 (raw 0x0a0000)")
+        self.assertIn("Windows version must equal", info["summary"])
+
+    def test_unconditional_engine_kind_forms(self):
+        for payload in ("7700000001000000", "7600000000000000", "7500000002000000"):
+            with self.subTest(payload=payload):
+                info = describe_version_check(
+                    int.from_bytes(bytes.fromhex(payload[:8]), "little"),
+                    int.from_bytes(bytes.fromhex(payload[8:]), "little"),
+                )
+                self.assertTrue(info["always_true"])
+                self.assertIn("unconditional", info["summary"])
+
+    def test_unknown_flag_and_unknown_check_are_honest(self):
+        flag = describe_version_check(0x31, 1)
+        self.assertIn("Seville", flag["summary"])
+        unknown_flag = describe_version_check(0x04, 1)  # +0xb38: not decoded
+        self.assertIn("+0xb38", unknown_flag["summary"])
+        self.assertIn("not been decoded", unknown_flag["explanation"])
+        unknown = describe_version_check(0xFFFF, 7)
+        self.assertEqual(unknown["target_kind"], "unknown")
+        self.assertIn("Undecoded", unknown["summary"])
+
+    def test_enrich_does_not_overwrite_stored_technical_description(self):
+        stored = {"check_id": 0x34, "value": 1, "description": "bool(flag_0xb47) == True"}
+        enriched = enrich_versioncheck_details(stored)
+        self.assertEqual(enriched["description"], "bool(flag_0xb47) == True")
+        self.assertEqual(enriched["summary"], "PUA protection must be enabled")
+        self.assertEqual(stored["description"], "bool(flag_0xb47) == True")
+        self.assertNotIn("summary", stored)
+
+
+class VersionGateContextTests(unittest.TestCase):
+    def test_gate_lists_records_until_next_gate(self):
+        signatures = [
+            {'id': 1, 'type_id': 0x7A, 'type': 'SIGNATURE_TYPE_VERSIONCHECK',
+             'offset': 10, 'details': {'check_id': 0x34, 'value': 1}},
+            {'id': 2, 'type_id': 0x55, 'type': 'SIGNATURE_TYPE_NID64',
+             'offset': 11, 'details': {}},
+            {'id': 3, 'type_id': 0x7A, 'type': 'SIGNATURE_TYPE_VERSIONCHECK',
+             'offset': 12, 'details': {'check_id': 0, 'value': 0}},
+            {'id': 4, 'type_id': 0x7E, 'type': 'SIGNATURE_TYPE_SNID',
+             'offset': 13, 'details': {}},
+        ]
+        annotate_version_gates(signatures)
+        self.assertEqual(signatures[0]['details']['gate']['gated_count'], 1)
+        self.assertEqual(
+            [rec['id'] for rec in signatures[0]['details']['gate']['gated_records']],
+            [2],
+        )
+        self.assertEqual(signatures[2]['details']['gate']['gated_count'], 1)
+        self.assertEqual(
+            [rec['id'] for rec in signatures[2]['details']['gate']['gated_records']],
+            [4],
+        )
+        self.assertEqual(signatures[1]['details']['gated_by']['id'], 1)
+        self.assertNotIn('gated_by', signatures[3]['details'])
 
 
 if __name__ == "__main__":

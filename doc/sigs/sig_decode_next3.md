@@ -116,6 +116,10 @@ check, the rest of the threat's signatures are not loaded. `check_id = 0`
 always passes and is used to re-enable loading; the pair
 `check_id = 0x77, value = 1` is the modern unconditional form.
 
+Note the loader's short circuit: when records are already disabled, only a
+record whose `check_id == 0` is evaluated. A later conditional gate is skipped,
+so only the always-true reset can turn loading back on.
+
 This explains the shape of many threats: real records surrounded by
 `VERSIONCHECK` gates, and `0x00000000/0x00000000` stubs (equal to "always
 pass"). `FUN_180607434` / `FUN_180607850` (the `badrecs` fixup) even rewrite
@@ -137,8 +141,8 @@ Ids observed in the database (count of all 84,634 records):
 |---:|------:|------------------------------|
 | `0x00` | 42,317 | always true (re-enable) |
 | `0x77` | 5,252 | engine kind/feature gate; `value == 1` ⇒ always true |
-| `0x31` | 3,833 | boolean engine flag `+0xb43` |
-| `0x34` | 3,264 | boolean engine flag `+0xb47` |
+| `0x31` | 3,833 | Defender for Endpoint / "Seville" enabled (`MpSevilleEnable`, flag `+0xb43`) |
+| `0x34` | 3,264 | PUA protection enabled (`MpEnablePUS`, engine PUA mode, flag `+0xb47`) |
 | `0x38` | 3,113 | definition-version timestamp |
 | `0x3c`-`0x3f` | 2,761 each | dword 0..3 of the 16-byte **definition-set digest** (`ctx+0x15870`) |
 | `0x58` | 1,448 | `engine_field_0xb98 > value` |
@@ -189,6 +193,36 @@ The engine "environment block" starts at `DAT_18111e110 + 0xb20` and is
 filled by `FUN_18058f8b4`; it mixes numeric version/product fields, feature
 bit flags, OS version and digest fields. `FUN_1804c0978` / `FUN_1804e0920`
 return the "platform version" / "product version" ids used by `0x80`-`0x85`.
+
+### Decoded feature flags
+
+The assignments in `FUN_18058f8b4` plus the policy each flag is read from
+identify the most common boolean flags. Confirmed meanings:
+
+| flag | meaning | evidence |
+|-----:|---------|----------|
+| `+0xb42` | Microsoft-internal build | `SQMClient\MSFTInternal` (`FUN_180752530`) |
+| `+0xb43` | Defender for Endpoint / "Seville" | `MpSevilleEnable` policy; "Seville" was the codename of Defender ATP/MDE |
+| `+0xb44` | Sense/EDR sensor installed | `FUN_180752424` checks `Services\Sense` → `MsSense.exe` |
+| `+0xb46` | MBA policy | `MpEnableMBA` policy |
+| `+0xb47` | **PUA/PUS protection** | `MpEnablePUS` policy; also engine `puamode` (1 or 2). Heartbeat writes `"puamode"` from `+0x158f8` only when this flag is set (`FUN_1804fe53c`). `FUN_180447d7c` suppresses `PUA:` threats when `+0xb47` is clear. |
+| `+0xb49` | automatic sample submission | heartbeat `"autosubmit"`; derived from `autosampleoptinvalue` |
+| `+0xb4a` | PUA removal | `MpEnablePUSRemoval` policy |
+| `+0xb50` | test signing | `NtQuerySystemInformation(SystemCodeIntegrityInformation)` option bit 1 |
+| `+0xb51` | Windows Lockdown Mode | `WldpQueryWindowsLockdownMode` |
+| `+0xb52` | Developer Mode | `AppModelUnlock\AllowDevelopmentWithoutDevLicense` |
+| `+0xb54` | inside a container | heartbeat `"isincontaineros"` |
+
+Flags without a confirmed meaning stay labelled as internal engine feature
+flags. This is what the UI now shows, instead of only `bool(flag_0xb47) ==
+True`.
+
+Worked example: `PUA:Win32/Puwaders.C!ml` has
+`VERSIONCHECK 0x34/1`, a `NID64`, then `VERSIONCHECK 0x00/0`. The first gate
+means the NID64 only loads when PUA protection is enabled, so the PUA detection
+only fires on machines with PUA mode on. The second record is only a reset
+point: check id 0 returns true immediately and re-enables loading. "Always
+true" therefore describes the gate, not the detection.
 
 ---
 
@@ -241,7 +275,14 @@ The plain parser already produced good YARA strings for all 3,053 records
 * `defender2yara/defender/signature/aggregator.py` — `AaAggregatorExSig`,
   `decode_aggregator` / `encode_aggregator`, substitution table.
 * `defender2yara/defender/signature/versioncheck.py` — `VersionCheckSig`,
-  `VERSION_CHECK_IDS` table and `describe()`.
+  `VERSION_CHECK_IDS` / `ENGINE_FLAGS` tables, `describe()` and
+  `describe_version_check()` (user-facing summary, explanation and flag
+  meanings, also used by the web UI).
 * `defender2yara/defender/signature/hstr.py` — `DexHStrExtSig`.
 * `defender2yara/defender/vdm.py` — dispatch for `0xbe`, `0xe7`, `0x7a`.
+* `defender2yara/threat_api.py` — `annotate_version_gates()` adds the
+  "which following records does this gate control?" / `gated_by` context used
+  by the threat page.
+* `app/templates/signatures/versioncheck.html`, `app/static/sigs/SIG_VERSIONCHECK.md`
+  — the user-facing version-check card and explanation.
 * `tests/test_signature_next3.py` — vectors from the real database.

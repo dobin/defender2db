@@ -21,7 +21,8 @@
     "detail": "SIG_AAGGREGATOREX.md"
   },
   "VERSIONCHECK": {
-    "description": "A version check gates subsequent signature records based on an environment or engine value."
+    "description": "A version check gates subsequent signature records based on an environment or engine value. It is not a detection: it only decides whether the records that follow it are loaded.",
+    "detail": "SIG_VERSIONCHECK.md"
   },
   "SIGTREE": {
     "description": "A behavior signature tree represents related nodes, edges, and conditions used to identify behavior."

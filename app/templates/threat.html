@@ -52,6 +52,10 @@
           {% if sig.decode_status == 'unsupported' %}<p>No decoder is available for this record type.</p>{% endif %}
           {% if sig.decode_status == 'error' %}<p>Decoding failed; see stored diagnostics below.</p>{% endif %}
           {% if sig.decode_status == 'partial' %}<p>Partially decoded; unknown interpretation remains.</p>{% endif %}
+          {% set gated_by = sig.details.get('gated_by') %}
+          {% if gated_by %}
+          <p class="gated-by">Only loaded when <a href="#signature-{{ gated_by.get('id') }}">VERSIONCHECK {{ gated_by.get('id') }}</a> passes: {{ gated_by.get('summary', '') }}</p>
+          {% endif %}
           {% include sig.template %}
           <a href="{{ url_for('views.api_get_signature', local_id=sig.id) }}">Signature metadata</a>
           {% if sig.raw_available %}
@@ -70,7 +74,7 @@
       </section>
       {% endif %}
       <section class="threat-section"><h3>Original signature order</h3>
-        <ol>{% for sig in threat.signatures %}<li><a href="#signature-{{ sig.id }}">{{ sig.offset|hexnum }} · {{ sig.type }} · {{ sig.decode_status }}</a></li>{% endfor %}</ol>
+        <ol>{% for sig in threat.signatures %}<li><a href="#signature-{{ sig.id }}">{{ sig.offset|hexnum }} &#183; {{ sig.type }} &#183; {{ sig.decode_status }}</a>{% if sig.type == 'SIGNATURE_TYPE_VERSIONCHECK' %} &#8212; {{ sig.details.get('summary') or sig.details.get('description', '') }}{% endif %}</li>{% endfor %}</ol>
       </section>
     </div>
   </body>

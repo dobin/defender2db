@@ -5,6 +5,7 @@ from sqlalchemy import select
 from defender2yara.defender.constant import SIG_TYPES
 from defender2yara.defender.dbthreat import DEFAULT_DATABASE, DbThreat, ImportInfo, RawRecord, Signature, read_session
 from defender2yara.defender.signature.sigtree import SIGTREE_TYPE_IDS, enrich_sigtree_details
+from defender2yara.defender.signature.versioncheck import enrich_versioncheck_details
 from defender2yara.defender.threat import SEVERITY_MAP
 
 
@@ -15,6 +16,10 @@ class RawUnavailableError(ValueError):
 # SIGNATURE_TYPE_NID64.  Its key is often a packed engine record id, which can
 # be resolved back to a shipped record through ``Signature.record_id``.
 NID64_TYPE_ID = 0xCE
+
+# SIGNATURE_TYPE_VERSIONCHECK.  The record gates the records that follow it in
+# the same threat, so the threat page needs the neighbour context.
+VERSIONCHECK_TYPE_ID = 0x7A
 
 
 class RecordIdResolver:
@@ -94,10 +99,52 @@ def search_threats(threat_name: str, database=DEFAULT_DATABASE) -> list[dict]:
         return [dict(row._mapping) for row in rows]
 
 
+def annotate_version_gates(signatures: list[dict]) -> list[dict]:
+    """Add "which records does this gate control?" context to version checks.
+
+    A ``VERSIONCHECK`` switches loading on or off for the records that follow it
+    in the same threat, until the next ``VERSIONCHECK``.  The stored details of
+    one record cannot express that, so it is computed from the ordered list.
+    """
+    active_gate = None
+    for index, signature in enumerate(signatures):
+        if signature.get('type_id') == VERSIONCHECK_TYPE_ID:
+            gated = []
+            for following in signatures[index + 1:]:
+                if following.get('type_id') == VERSIONCHECK_TYPE_ID:
+                    break
+                gated.append({
+                    'id': following.get('id'),
+                    'type': following.get('type'),
+                    'type_id': following.get('type_id'),
+                    'offset': following.get('offset'),
+                })
+            details = enrich_versioncheck_details(dict(signature.get('details') or {}))
+            details['gate'] = {
+                'gated_count': len(gated),
+                'gated_records': gated,
+            }
+            signature['details'] = details
+            unconditional = details.get(
+                'always_true', details.get('is_unconditional', False))
+            active_gate = None if unconditional else {
+                'id': signature.get('id'),
+                'summary': details.get('summary') or details.get('description', ''),
+            }
+            continue
+        if active_gate is not None:
+            details = dict(signature.get('details') or {})
+            details['gated_by'] = active_gate
+            signature['details'] = details
+    return signatures
+
+
 def signature_details(row, raw_available, resolver=None):
     details = row.details
     if row.type_id in SIGTREE_TYPE_IDS:
         details = enrich_sigtree_details(details)
+    if row.type_id == VERSIONCHECK_TYPE_ID:
+        details = enrich_versioncheck_details(details)
     if (row.type_id == NID64_TYPE_ID and isinstance(details, dict)
             and details.get('has_record_id_layout')
             and details.get('record_key_hex')):
@@ -134,8 +181,8 @@ def get_threat_details(threat_id: int, database=DEFAULT_DATABASE) -> dict:
             if sig.type_id == NID64_TYPE_ID and isinstance(sig.details, dict)
             and sig.details.get('has_record_id_layout')
             and sig.details.get('record_key_hex'))
-        result['signatures'] = [signature_details(sig, raw_available, resolver)
-                                for sig in signatures]
+        result['signatures'] = annotate_version_gates(
+            [signature_details(sig, raw_available, resolver) for sig in signatures])
         result['boundary_ids'] = list(session.scalars(select(Signature.id).where(
             Signature.threat_id == threat_id, Signature.role.in_(['threat_begin', 'threat_end']))
             .order_by(Signature.offset)))

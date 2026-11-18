@@ -1,4 +1,61 @@
 {% set d = sig.details %}
-<p>{{ d.get('description', '') }}</p>
-<p>Check ID {{ d.get('check_id')|hexnum }} · Value {{ d.get('value')|hexnum }}
-  {% if d.get('is_unconditional') %} · Always passes{% endif %}</p>
+{% set gate = d.get('gate') or {} %}
+{% set always_true = d.get('always_true', d.get('is_unconditional', false)) %}
+{% set always_false = d.get('always_false', false) %}
+<div class="version-check-heading">
+  {% if always_true %}
+  <span class="badge text-bg-success">No condition</span>
+  {% elif always_false %}
+  <span class="badge text-bg-danger">Blocks records</span>
+  {% else %}
+  <span class="badge text-bg-warning">Conditional gate</span>
+  {% endif %}
+  <strong>{{ d.get('summary') or d.get('description', '') }}</strong>
+</div>
+<p class="version-check-explanation">{{ d.get('explanation', '') }}</p>
+<p class="version-check-note">
+  A version check is not a detection. It switches loading of the records that
+  follow it on or off. Once a gate fails, only a check with ID 0 turns loading
+  back on.
+</p>
+<table class="static-signature-table version-check-table">
+  <tbody>
+    <tr>
+      <th>Check</th>
+      <td><code>{{ d.get('check_id')|hexnum }}</code>{% if d.get('target_label') %} &#183; {{ d.get('target_label') }}{% endif %}</td>
+    </tr>
+    <tr>
+      <th>Required value</th>
+      <td><code>{{ d.get('value')|hexnum }}</code>{% if d.get('value_text') %} &#183; {{ d.get('value_text') }}{% endif %}</td>
+    </tr>
+    {% if gate %}
+    <tr>
+      <th>Following records</th>
+      <td>
+        {% if gate.get('gated_count') %}
+        {{ gate.get('gated_count') }} record(s):
+        {% for rec in gate.get('gated_records', []) %}<a href="#signature-{{ rec.get('id') }}">{{ rec.get('type', '')|replace('SIGNATURE_TYPE_', '') }}</a> (local ID {{ rec.get('id') }}){% if not loop.last %}, {% endif %}{% endfor %}
+        <br>
+        {% if always_true %}
+        These records load unconditionally.
+        {% else %}
+        If the condition is not met, these records are skipped.
+        {% endif %}
+        {% else %}
+        None. This gate is the last signature in the threat, so it has no
+        effect on the other records.
+        {% endif %}
+      </td>
+    </tr>
+    {% endif %}
+  </tbody>
+</table>
+<details class="static-signature-help">
+  <summary>Technical predicate and raw check</summary>
+  <p><code>{{ d.get('description', '') }}</code></p>
+  <p class="text-muted">
+    Check ID <code>{{ d.get('check_id')|hexnum }}</code>,
+    value <code>{{ d.get('value')|hexnum }}</code>.
+    The engine evaluates this pair while loading the definition database.
+  </p>
+</details>
