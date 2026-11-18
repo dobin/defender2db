@@ -11,9 +11,10 @@ from defender2yara.defender.constant import SIG_TYPES
 #   decoded_byte = table[stored_byte]
 #
 # Taken from mpengine.dll build 1.1.26100.4 at VA 0x180d9e080 (256 bytes, a
-# permutation).  The loader (FUN_180185410) maps both the optional name and the
-# expression body through this table right after copying the record payload, so
-# the on-disk form is a simple, static obfuscation, not compression.
+# permutation).  The loader (FUN_180185410) maps the expression body through
+# this table right after copying the record payload; the optional name is
+# interned as plain text, so the on-disk form is a simple, static obfuscation,
+# not compression.
 AGGREGATOR_SUBSTITUTION = bytes.fromhex(
     "4bbaa3c0464384eda8973f7217adef54ddf9216442f18c49687677fc11b274d3"
     "dc040996d40df619fb357e9fd1e19dccdb63f53094407cf35dc7aae4e614676e"
@@ -62,9 +63,9 @@ def encode_aggregator(data: bytes) -> bytes:
 _REFERENCE_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*:[^\s&|!()]+")
 
 
-class AaAggregatorExSig(BaseSig):
+class _AggregatorSig(BaseSig):
     """
-    SIGNATURE_TYPE_AAGGREGATOREX (0xe7), the "aggregator" signature.
+    Shared decoder for the two aggregator record types.
 
     An aggregator does not look at the file itself.  It evaluates a boolean
     expression over *other* signature records, identified by their threat /
@@ -74,26 +75,28 @@ class AaAggregatorExSig(BaseSig):
     file-offset-pattern record, ``AGG:``/``AGGR:`` another aggregator, and so
     on.  Operators are ``&`` (and), ``|`` (or), ``!`` (not) and parentheses.
 
-    On-disk layout (little endian), reverse engineered from the 0xe7 record
-    handler FUN_180185410 in mpengine.dll 1.1.26100.4:
+    On-disk layout (little endian), identical for both types::
 
         u8   flags          observed 0x00, 0x01
-        u8   name_length    always 0 in the shipped database
+        u8   name_length    0 in most records; named shared records exist
         u16  body_length
         u8   name[name_length]
         u8   body[body_length]
 
-    ``name`` and ``body`` are byte-substituted with
-    :data:`AGGREGATOR_SUBSTITUTION`; after decoding ``body`` is a plain ASCII
-    expression such as::
+    ``SUBSTITUTED`` selects the newer ``0xe7`` form, whose **body** is
+    byte-substituted with :data:`AGGREGATOR_SUBSTITUTION`.  The optional name
+    is plain text in both forms (the engine interns it before substituting the
+    body).  After decoding, ``body`` is a readable expression such as::
 
         HSTR:PWS:Win32/Gina.dll&SIGATTR:PWS:Win32/Gina.dll
 
     The engine computes a CRC32 over the whole payload and registers the
-    aggregator under the packed id ``crc | len << 40 | 0xe7 << 32`` plus a
+    aggregator under the packed id ``crc | len << 40 | type << 32`` plus a
     20-byte content hash (the same record-store scheme used by SNID).
     """
 
+    SIG_TYPE_ID: int = 0
+    SUBSTITUTED = False
     FLAG_NONE = 0x00
     # 0x01 records always start with a SIGATTR: reference in the sample data;
     # the flag bit is forwarded verbatim to the expression compiler.  Its exact
@@ -102,11 +105,13 @@ class AaAggregatorExSig(BaseSig):
 
     def __init__(self, data: bytes, ptr: int = 0) -> None:
         self.parse_common_header(data, ptr)
-        assert self.sig_type == SIG_TYPES[0xE7]
+        assert self.sig_type == SIG_TYPES[self.SIG_TYPE_ID]
 
         sd = self.sig_data
         if len(sd) < 4:
-            raise ValueError(f"Truncated AAGGREGATOREX header: {len(sd)} bytes")
+            raise ValueError(
+                f"Truncated {self.sig_type} header: {len(sd)} bytes"
+            )
 
         self.flags = sd[0]
         self.name_length = sd[1]
@@ -115,24 +120,31 @@ class AaAggregatorExSig(BaseSig):
         expected = 4 + self.name_length + self.body_length
         if expected > len(sd):
             raise ValueError(
-                "AAGGREGATOREX payload shorter than its header declares: "
+                f"{self.sig_type} payload shorter than its header declares: "
                 f"{len(sd)} < {expected}"
             )
 
         raw_name = sd[4:4 + self.name_length]
         raw_body = sd[4 + self.name_length:expected]
 
-        self.name = decode_text(decode_aggregator(raw_name))
-        self.expression = decode_text(decode_aggregator(raw_body))
+        # Only the body is substituted in the 0xe7 form; the optional name
+        # is stored as plain text (FUN_180185410 interns it verbatim).
+        if self.SUBSTITUTED:
+            raw_body = decode_aggregator(raw_body)
+
+        self.name = decode_text(raw_name)
+        self.expression = decode_text(raw_body)
 
         # Everything after the declared body (normally nothing).
         self.extra = bytes(sd[expected:])
 
     def to_details(self) -> dict:
         return {
+            "layout": self.layout,
             "flags": self.flags,
             "name": self.name,
             "expression": self.expression,
+            "is_obfuscated": self.SUBSTITUTED,
             "is_attribute": self.is_attribute,
             "references": self.references,
             "reference_kinds": [
@@ -159,4 +171,38 @@ class AaAggregatorExSig(BaseSig):
         return sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
 
     def __repr__(self) -> str:
-        return f"AaAggregatorExSig(flags={self.flags:#04x}, expression={self.expression!r})"
+        return (
+            f"{type(self).__name__}(flags={self.flags:#04x}, "
+            f"expression={self.expression!r})"
+        )
+
+
+class AaAggregatorSig(_AggregatorSig):
+    """``SIGNATURE_TYPE_AAGGREGATOR`` (``0x96``) - legacy plaintext aggregator.
+
+    Same payload layout and expression grammar as
+    :class:`AaAggregatorExSig`, but the body is stored as plain ASCII instead of
+    being substituted.  The engine handler is ``FUN_18041a5d0``, which parses
+    the header, interns the name and hands the body straight to the shared
+    expression compiler ``FUN_1801858a8`` (no substitution table).  It is the
+    older aggregator form; the shipped database still contains 9,757 records.
+    """
+
+    SIG_TYPE_ID = 0x96
+    SUBSTITUTED = False
+    layout = "aaggregator"
+
+
+class AaAggregatorExSig(_AggregatorSig):
+    """``SIGNATURE_TYPE_AAGGREGATOREX`` (``0xe7``) - extended aggregator.
+
+    Identical payload layout to :class:`AaAggregatorSig`, but the **body** is
+    obfuscated with :data:`AGGREGATOR_SUBSTITUTION`.  The optional name is plain
+    text, because ``FUN_180185410`` interns it before substituting the body.
+    The handler also hashes the normalised payload and calls the same expression
+    compiler ``FUN_1801858a8``.
+    """
+
+    SIG_TYPE_ID = 0xE7
+    SUBSTITUTED = True
+    layout = "aaggregatorex"

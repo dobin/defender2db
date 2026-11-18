@@ -21,5 +21,10 @@ from defender2yara.defender.signature.macro_source import MacroSourceSig
 from defender2yara.defender.signature.cksimplerec import (
     CkOldRecSig, CkSimpleRecSig,
 )
-from defender2yara.defender.signature.aggregator import AaAggregatorExSig
+from defender2yara.defender.signature.aggregator import (
+    AaAggregatorExSig, AaAggregatorSig,
+)
+from defender2yara.defender.signature.pathname import (
+    FilePathSig, FolderNameSig,
+)
 from defender2yara.defender.signature.versioncheck import VersionCheckSig

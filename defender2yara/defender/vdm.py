@@ -183,8 +183,14 @@ class Vdm:
             entry = CkSimpleRecSig(data,ptr)
         elif sig_type == "SIGNATURE_TYPE_CKOLDREC":
             entry = CkOldRecSig(data,ptr)
+        elif sig_type == "SIGNATURE_TYPE_AAGGREGATOR":
+            entry = AaAggregatorSig(data,ptr)
         elif sig_type == "SIGNATURE_TYPE_AAGGREGATOREX":
             entry = AaAggregatorExSig(data,ptr)
+        elif sig_type == "SIGNATURE_TYPE_FILEPATH":
+            entry = FilePathSig(data,ptr)
+        elif sig_type == "SIGNATURE_TYPE_FOLDERNAME":
+            entry = FolderNameSig(data,ptr)
         elif sig_type == "SIGNATURE_TYPE_VERSIONCHECK":
             entry = VersionCheckSig(data,ptr)
         else:

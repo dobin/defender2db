@@ -1,0 +1,16 @@
+{% set d = sig.details %}
+<p><strong>{{ d.get('rendered', d.get('pattern', '')) }}</strong></p>
+<dl>
+  <dt>Root</dt>
+  <dd>
+    {{ d.get('root_name', '') }} ({{ d.get('root_id_hex', '') }})
+    {% if d.get('root_macro') %}&#183; <code>{{ d.get('root_macro') }}</code>{% endif %}
+  </dd>
+  <dt>Pattern</dt>
+  <dd>
+    <code>{{ d.get('pattern', '') }}</code>
+    {% if d.get('is_wildcard') %}<em>(contains glob wildcards)</em>{% endif %}
+  </dd>
+  <dt>Absolute path</dt>
+  <dd>{{ 'yes' if d.get('is_absolute') else 'no' }}</dd>
+</dl>

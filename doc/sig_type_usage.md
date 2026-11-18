@@ -29,8 +29,8 @@ Counts are actual signature records, unpacked from every `threatObject` blob (no
 | 15 | `SIGNATURE_TYPE_SIGTREE` | `0x40` | 10,017 | 0.15% | 8,433 | parsed (attribute tree) |
 | 16 | `SIGNATURE_TYPE_NSCRIPT_NORMAL` | `0x27` | 9,775 | 0.14% | 6,626 | parsed (hash pairs / rolling-window condition list) |
 | 17 | `SIGNATURE_TYPE_PEHSTR` | `0x61` | 6,906 | 0.10% | 6,355 | parsed (YARA) |
-| 18 | `SIGNATURE_TYPE_AAGGREGATOR` | `0x96` | 6,646 | 0.10% | 3,858 | raw only / unimplemented |
-| 19 | `SIGNATURE_TYPE_FOLDERNAME` | `0x60` | 6,055 | 0.09% | 2,020 | raw only / unimplemented |
+| 18 | `SIGNATURE_TYPE_AAGGREGATOR` | `0x96` | 6,646 | 0.10% | 3,858 | parsed (plaintext expression) |
+| 19 | `SIGNATURE_TYPE_FOLDERNAME` | `0x60` | 6,055 | 0.09% | 2,020 | parsed (CSIDL root + path/glob) |
 | 20 | `SIGNATURE_TYPE_MACRO_PCODE64` | `0xCF` | 5,925 | 0.09% | 1,128 | raw only / unimplemented |
 | 21 | `SIGNATURE_TYPE_MACROHSTR_EXT` | `0x8F` | 5,693 | 0.08% | 4,047 | parsed (YARA) |
 | 22 | `SIGNATURE_TYPE_KVIR32` | `0x20` | 5,369 | 0.08% | 2,704 | raw only / unimplemented |
@@ -38,7 +38,7 @@ Counts are actual signature records, unpacked from every `threatObject` blob (no
 | 24 | `SIGNATURE_TYPE_REGKEY` | `0x63` | 3,911 | 0.06% | 542 | raw only / unimplemented |
 | 25 | `SIGNATURE_TYPE_CMDHSTR_EXT` | `0xD7` | 2,941 | 0.04% | 2,737 | parsed (YARA) |
 | 26 | `SIGNATURE_TYPE_DEXHSTR_EXT` | `0xBE` | 2,766 | 0.04% | 2,653 | parsed (YARA, DEX flags) |
-| 27 | `SIGNATURE_TYPE_FILEPATH` | `0x5F` | 2,479 | 0.04% | 515 | raw only / unimplemented |
+| 27 | `SIGNATURE_TYPE_FILEPATH` | `0x5F` | 2,479 | 0.04% | 515 | parsed (CSIDL root + path/glob) |
 | 28 | `SIGNATURE_TYPE_MACRO_PCODE` | `0x42` | 2,432 | 0.04% | 2,116 | raw only / unimplemented |
 | 29 | `SIGNATURE_TYPE_SIGTREE_EXT` | `0x41` | 2,205 | 0.03% | 1,712 | parsed (tree + attribute ids) |
 | 30 | `SIGNATURE_TYPE_ELFHSTR_EXT` | `0x8C` | 1,944 | 0.03% | 1,905 | parsed (YARA) |
@@ -182,8 +182,9 @@ Three more types now have structural decoders (full notes in
 `doc/sigs/sig_decode_next3.md`):
 
 - `SIGNATURE_TYPE_AAGGREGATOREX` (`0xe7`): a boolean expression over other signature
-  records (`HSTR:...&SIGATTR:...`), obfuscated with a static 256-byte substitution table
-  (`mpengine` VA `0x180d9e080`). Parsed into a readable expression string.
+  records (`HSTR:...&SIGATTR:...`). The body is obfuscated with a static 256-byte
+  substitution table (`mpengine` VA `0x180d9e080`); the optional name is plain text.
+  Parsed into a readable expression string.
 - `SIGNATURE_TYPE_VERSIONCHECK` (`0x7a`): `u32 check_id, u32 value` environment gate.
   It is evaluated by the loader and, when False, causes the following records of the
   threat to be skipped. Decoded into a predicate (`os_build < 17763`,
@@ -548,6 +549,43 @@ Wired into `Vdm.decode_record`; tests in
 `tests/test_signature_ck_nscript_normal.py`.  None of the three feeds YARA:
 the CK records are region hashes and `NSCRIPT_NORMAL` stores only script
 hashes.
+
+## Eighth round: plaintext aggregators and path signatures
+
+Full write-up: `doc/sigs/sig_decode_aggregator_paths.md`.  Engine notes were
+added to `cache/functions_vdm.md` §15.
+
+Three more types now have structural decoders.  All 18,291 records parse with
+zero errors and zero warnings.
+
+- `SIGNATURE_TYPE_AAGGREGATOR` (`0x96`) is the **legacy plaintext form of
+  `AAGGREGATOREX`**.  Same header (`u8 flags, u8 name_len, u16 body_len, name,
+  body`) and the same expression compiler (`FUN_1801858a8`), but the body is
+  plain ASCII instead of being substituted with the `0xe7` table at
+  `0x180d9e080`.  The optional name is plain text in both forms.  Handler
+  `FUN_18041a5d0`.  9,757 records: 6,646 in real threats (anonymous) and 3,111
+  shared records with `!#...` feed names.
+  Example: `VirTool:Win32/Injector` ->
+  `SLFPER:Win32/InjectsRundll32&(Lua:IsEnterprise|IsSeville)`.
+- `SIGNATURE_TYPE_FILEPATH` (`0x5f`) and `SIGNATURE_TYPE_FOLDERNAME` (`0x60`)
+  are **path conditions**, not hashes: `u16 root_id` plus a case-insensitive
+  path/glob with no NUL terminator.  The root id is a Windows CSIDL
+  (`0x25` System32, `0x26` Program Files, `0x1a` AppData, `0x24` windir, ...)
+  or an engine pseudo-folder: `0xfffb` system drive, `0xfffc`
+  `%CommonProgramFiles%`, `0xfffd` `%allusersprofile%`, `0xfffe` `%temp%`,
+  `0xffff` literal absolute path.  `?`/`*` are glob wildcards.  Coverage:
+  2,479 FILEPATH records (515 threats) and 6,055 FOLDERNAME records (2,020
+  threats), e.g. `FILEPATH %temp%\s.cmd`,
+  `FILEPATH %CommonProgramFiles%\microsoft shared\greenav20??.exe`,
+  `FOLDERNAME %ProgramFiles%\common files\kuum`.
+
+Decoders: `AaAggregatorSig` in `defender2yara/defender/signature/aggregator.py`
+(the `0xe7` parser was refactored into a shared `_AggregatorSig` base) and
+`FilePathSig` / `FolderNameSig` in
+`defender2yara/defender/signature/pathname.py`.  Wired into
+`Vdm.decode_record`; tests in `tests/test_signature_aggregator_paths.py`.
+None of the three feeds YARA: an aggregator references other rules, and a path
+record is not a file-byte pattern.
 
 ## Aggregate pseudo-threat records
 

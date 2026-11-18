@@ -14,7 +14,8 @@
     "description": "A DEX string signature matches weighted patterns in Android Dalvik executable strings."
   },
   "AAGGREGATOR": {
-    "description": "An aggregator combines references to other Defender signatures into a detection expression."
+    "description": "A legacy aggregator stores the same boolean expression as AAGGREGATOREX, but as plain text instead of an obfuscated body. It combines references to other Defender signatures and is not a file pattern.",
+    "detail": "SIG_AAGGREGATOREX.md"
   },
   "AAGGREGATOREX": {
     "description": "An extended aggregator combines other signature results with a boolean expression.",
@@ -71,5 +72,13 @@
   "MACRO_SOURCE": {
     "description": "A macro source signature: an ordered sequence of normalised macro/VBA routine hashes for a specific macro stream kind.",
     "detail": "SIG_MACRO_SOURCE.md"
+  },
+  "FILEPATH": {
+    "description": "A file path signature: a known-folder root (CSIDL or engine pseudo-folder) plus a case-insensitive path or glob pattern.",
+    "detail": "SIG_FILEPATH.md"
+  },
+  "FOLDERNAME": {
+    "description": "A folder path signature: a known-folder root plus a case-insensitive directory path or glob pattern.",
+    "detail": "SIG_FILEPATH.md"
   }
 }

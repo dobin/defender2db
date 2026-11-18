@@ -52,15 +52,16 @@ script / behavior clusters are glued together.
 ```
 u8   flags           0x00 or 0x01  (0x01 only on 186 records; forwarded to the
                                     expression compiler, meaning not confirmed)
-u8   name_length     always 0x00 in the shipped database
+u8   name_length     0x00..0x40; names exist in !InfrastructureShared
 u16  body_length
-u8   name[name_length]
-u8   body[body_length]
+u8   name[name_length]   plain text
+u8   body[body_length]   substituted
 ```
 
-`name` and `body` are obfuscated with a **256-byte static substitution table**
-(a permutation, so it is not compression). The loader maps each byte through
-the table right after copying the record:
+The **body** is obfuscated with a **256-byte static substitution table**
+(a permutation, so it is not compression); the optional **name is plain
+text**. The loader applies the table to the body right after copying the
+record, and interns the name verbatim:
 
 ```python
 decoded_byte = TABLE[stored_byte]
@@ -86,8 +87,9 @@ contain Cyrillic/Chinese look-alike characters, e.g.
 | `0x18098e6d0` | string-pool allocator (`"Aggregator string pool exhausted"` / `"Invalid aggregator string offset"`) |
 | `0x18041a5d0` | `0x96` (`AAGGREGATOR`) handler, the older non-`EX` form |
 
-The older `0x96` form uses the same idea but stores its data differently
-(`FUN_1801836c8`); it is not covered here.
+The older `0x96` form uses the same layout and grammar but stores the body in
+plain text (handler `FUN_18041a5d0`); it is decoded in
+`doc/sigs/sig_decode_aggregator_paths.md`.
 
 ---
 

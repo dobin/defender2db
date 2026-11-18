@@ -36,6 +36,8 @@ SIGNATURE_TEMPLATES = {
     'MACRO_SOURCE': 'signatures/macro_source.html',
     'CKSIMPLEREC': 'signatures/ckrecord.html',
     'CKOLDREC': 'signatures/ckrecord.html',
+    'FILEPATH': 'signatures/pathname.html',
+    'FOLDERNAME': 'signatures/pathname.html',
 }
 
 SIGNATURE_DESCRIPTIONS_PATH = Path(__file__).parent / 'static' / 'sigs' / 'signatures.json'

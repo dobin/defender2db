@@ -177,8 +177,10 @@ looks for **base64 file dropped into AppData\Temp**.
 
 ## Gotchas
 
-- The text shown is **decoded**; the raw database stores these bytes obfuscated.
-  Searching the binary VDM for `SCPT:` as plaintext will not find it.
+- The expression shown is **decoded**: the raw database stores the body
+  obfuscated, so searching the binary VDM for `SCPT:` as plaintext will not
+  find it. The optional record *name* (e.g. `!#SLF:...`) is stored as plain
+  text and can be searched directly.
 - `VERSIONCHECK` records can gate whether the aggregator (and the rest of the
   threat's records) is loaded at all, depending on engine/OS/definition
   version. An expression that "does not fire" on your build may simply be gated
