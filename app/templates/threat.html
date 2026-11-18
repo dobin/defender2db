@@ -36,7 +36,14 @@
         'VERSIONCHECK': 'Version checks', 'SIGTREE': 'Behavior signature trees',
         'SIGTREE_EXT': 'Behavior signature trees (extended)', 'SIGTREE_BM': 'Behavior signature trees (BM)',
         'NID': 'NID records', 'NID64': 'NID64 records', 'SNID': 'SNID references',
-        'REVOKED_CERTIFICATE': 'Revoked certificates'
+        'REVOKED_CERTIFICATE': 'Revoked certificates',
+        'NSCRIPT_SP': 'Script content hashes', 'NSCRIPT_NORMAL': 'Script content hashes',
+        'NSCRIPT_BRUTE': 'Script content signatures',
+        'MACRO_SOURCE': 'Macro source routine signatures',
+        'MACRO_PCODE': 'Macro p-code signatures', 'MACRO_PCODE64': 'Macro p-code signatures',
+        'LUASTANDALONE': 'Lua signatures',
+        'CKSIMPLEREC': 'Checksum region checks', 'CKOLDREC': 'Checksum region checks',
+        'FILEPATH': 'File path signatures', 'FOLDERNAME': 'Folder name signatures'
       } %}
       {% for kind, records in groups.items() %}
       <section class="threat-section signature-group signature-group-{{ kind|lower }}">

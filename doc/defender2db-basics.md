@@ -61,7 +61,7 @@ import_info (one import)
 signature row ---- optional raw_record row
 ```
 
-There are five tables:
+There are six tables:
 
 | Table | What it stores |
 |---|---|
@@ -69,6 +69,7 @@ There are five tables:
 | `source` | Stream kind, base/delta names, effective version, size, and hash. |
 | `threat` | Searchable threat name and Defender metadata, source occurrence, signature count, and generated output. |
 | `signature` | One row per parsed record, in source order, with local ID, source offset, optional owning threat, type/size/status, and JSON details. Shared/global records can have no threat owner. |
+| `macro_routine_key` | One row per `MACRO_SOURCE` routine hash, indexed so the same routine can be found in other detections. The hashes are one-way and cannot be reversed to macro text. |
 | `raw_record` | Optional exact bytes of the corresponding complete TLV record, including its header. |
 
 The layout deliberately avoids a SQL table for each signature type or for nested pieces such as string patterns and behavior-tree edges. Common searchable facts are columns; type-specific interpretations are JSON. This keeps schema evolution simple as more VDM formats are understood.

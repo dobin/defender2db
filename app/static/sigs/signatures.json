@@ -79,7 +79,7 @@
     "detail": "SIG_CKREC.md"
   },
   "MACRO_SOURCE": {
-    "description": "A macro source signature: an ordered sequence of normalised macro/VBA routine hashes for a specific macro stream kind.",
+    "description": "A macro source signature: an ordered sequence of one-way hashes of normalised macro/VBA routines for a specific macro stream kind. The hashes cannot be converted back to macro text, but can be compared across detections.",
     "detail": "SIG_MACRO_SOURCE.md"
   },
   "MACRO_PCODE": {

@@ -82,6 +82,24 @@ class Signature(Base):
     details: Mapped[dict] = mapped_column(JSON)
 
 
+class MacroRoutineKey(Base):
+    """One routine hash required by a MACRO_SOURCE signature.
+
+    MACRO_SOURCE keys are opaque one-way hashes, but the same routine is often
+    shared by several families.  Keeping the keys in their own indexed table
+    makes "which other records require this exact routine?" a lookup instead of
+    a scan over every signature's details JSON.
+    """
+
+    __tablename__ = 'macro_routine_key'
+    __table_args__ = (Index('macro_routine_key_lookup', 'key'),)
+    signature_id: Mapped[int] = mapped_column(
+        ForeignKey('signature.id'), primary_key=True)
+    # 16 lowercase hex digits, the same text stored in ``routine_keys``.
+    key: Mapped[str] = mapped_column(String(16), primary_key=True)
+    threat_id: Mapped[int | None] = mapped_column(ForeignKey('threat.id'))
+
+
 class RawRecord(Base):
     __tablename__ = 'raw_record'
     signature_id: Mapped[int] = mapped_column(ForeignKey('signature.id'), primary_key=True)

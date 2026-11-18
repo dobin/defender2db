@@ -329,6 +329,13 @@ formulas all keys do.  The exact per-routine normalisation is internal to the
 macro parser; the keys are exposed as 16-hex strings, e.g.
 `2aaad95be14561fd`.  Do not interpret them as a file hash.
 
+The hash is one-way: a key cannot be converted back into the routine text it
+was computed from, and mpengine does not ship the pre-image.  The only useful
+lookup is reuse — the same routine appears in several records, so the shipped
+database stores each key in `macro_routine_key` and the threat page lists the
+other detections that require the same key.  See `SIG_MACRO_SOURCE.md` in the
+application docs.
+
 Examples:
 
 ```

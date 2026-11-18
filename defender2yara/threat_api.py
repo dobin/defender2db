@@ -3,7 +3,10 @@
 from sqlalchemy import select
 
 from defender2yara.defender.constant import SIG_TYPES
-from defender2yara.defender.dbthreat import DEFAULT_DATABASE, DbThreat, ImportInfo, RawRecord, Signature, read_session
+from defender2yara.defender.dbthreat import (
+    DEFAULT_DATABASE, DbThreat, ImportInfo, MacroRoutineKey, RawRecord, Signature,
+    read_session,
+)
 from defender2yara.defender.signature.sigtree import SIGTREE_TYPE_IDS, enrich_sigtree_details
 from defender2yara.defender.signature.versioncheck import enrich_versioncheck_details
 from defender2yara.defender.threat import SEVERITY_MAP
@@ -20,6 +23,11 @@ NID64_TYPE_ID = 0xCE
 # SIGNATURE_TYPE_VERSIONCHECK.  The record gates the records that follow it in
 # the same threat, so the threat page needs the neighbour context.
 VERSIONCHECK_TYPE_ID = 0x7A
+
+# SIGNATURE_TYPE_MACRO_SOURCE.  Its keys are one-way routine hashes, so the only
+# useful resolution is "which other records require the same routine?".
+MACRO_SOURCE_TYPE_ID = 0x43
+MACRO_REFERENCE_LIMIT = 5
 
 
 class RecordIdResolver:
@@ -90,6 +98,97 @@ class RecordIdResolver:
         return self._cache[record_key]
 
 
+class MacroRoutineResolver:
+    """Resolve MACRO_SOURCE routine keys to other records that require them.
+
+    The keys are irreversible hashes of normalised macro routines: they cannot
+    be turned back into VBA text.  What can be resolved is *sharing* - the same
+    routine frequently appears in several records, which links variants and
+    families that reuse the routine.
+
+    Databases built before the ``macro_routine_key`` table existed are opened in
+    degraded mode: resolution reports ``unavailable`` instead of failing.
+    """
+
+    # Keep ``IN (...)`` lists well below SQLite's bound-variable limit.
+    CHUNK_SIZE = 500
+
+    def __init__(self, session):
+        self.session = session
+        self._available = None
+        self._cache = {}
+
+    @property
+    def available(self) -> bool:
+        if self._available is None:
+            self._available = self.session.connection().exec_driver_sql(
+                "SELECT 1 FROM sqlite_master WHERE type = 'table' "
+                "AND name = 'macro_routine_key'").first() is not None
+        return self._available
+
+    def prepare(self, keys) -> None:
+        """Resolve many keys with a few indexed ``IN`` queries."""
+        wanted = {key for key in keys if key not in self._cache}
+        if not wanted:
+            return
+        if not self.available:
+            for key in wanted:
+                self._cache[key] = {'status': 'unavailable'}
+            return
+
+        ordered = sorted(wanted)
+        for start in range(0, len(ordered), self.CHUNK_SIZE):
+            chunk = ordered[start:start + self.CHUNK_SIZE]
+            rows = self.session.execute(
+                select(MacroRoutineKey.key, MacroRoutineKey.signature_id,
+                       MacroRoutineKey.threat_id,
+                       DbThreat.name.label('threat_name'))
+                .join(DbThreat, DbThreat.id == MacroRoutineKey.threat_id, isouter=True)
+                .where(MacroRoutineKey.key.in_(chunk))
+                .order_by(MacroRoutineKey.key, MacroRoutineKey.signature_id)
+            ).all()
+            grouped = {}
+            for row in rows:
+                grouped.setdefault(row.key, []).append(row)
+            for key in chunk:
+                self._cache[key] = self._summarise(grouped.get(key, ()))
+
+    @staticmethod
+    def _summarise(matches) -> dict:
+        # One entry per threat: a family often ships several records that use
+        # the same routine, and the distinct families are what is interesting.
+        threats = {}
+        for row in matches:
+            threats.setdefault(row.threat_id, {
+                'threat_id': row.threat_id,
+                'threat_name': row.threat_name,
+                'signature_id': row.signature_id,
+            })
+        return {
+            'status': 'resolved',
+            'record_count': len(matches),
+            'threat_count': len(threats),
+            'threats': list(threats.values()),
+        }
+
+    def resolve(self, key: str, current_threat_id: int | None = None) -> dict:
+        self.prepare((key,))
+        reference = self._cache[key]
+        if reference.get('status') != 'resolved':
+            return dict(reference)
+        others = [threat for threat in reference['threats']
+                  if threat['threat_id'] != current_threat_id]
+        return {
+            'status': 'resolved',
+            'record_count': reference['record_count'],
+            'threat_count': reference['threat_count'],
+            'used_by_current': len(others) != len(reference['threats']),
+            'other_threat_count': len(others),
+            'threats': others[:MACRO_REFERENCE_LIMIT],
+            'truncated': len(others) > MACRO_REFERENCE_LIMIT,
+        }
+
+
 def search_threats(threat_name: str, database=DEFAULT_DATABASE) -> list[dict]:
     with read_session(database) as session:
         rows = session.execute(select(DbThreat.id, DbThreat.name, DbThreat.source_id,
@@ -139,7 +238,7 @@ def annotate_version_gates(signatures: list[dict]) -> list[dict]:
     return signatures
 
 
-def signature_details(row, raw_available, resolver=None):
+def signature_details(row, raw_available, resolver=None, macro_resolver=None):
     details = row.details
     if row.type_id in SIGTREE_TYPE_IDS:
         details = enrich_sigtree_details(details)
@@ -153,6 +252,14 @@ def signature_details(row, raw_available, resolver=None):
             resolver.resolve(int(details['record_key_hex'], 16))
             if resolver is not None else {'status': 'unavailable'}
         )
+    if (row.type_id == MACRO_SOURCE_TYPE_ID and isinstance(details, dict)
+            and details.get('routine_keys')):
+        details = dict(details)
+        details['routine_references'] = {
+            key: (macro_resolver.resolve(key, row.threat_id)
+                  if macro_resolver is not None else {'status': 'unavailable'})
+            for key in details['routine_keys']
+        }
     return {
         'id': row.id, 'source_id': row.source_id, 'threat_id': row.threat_id,
         'offset': row.offset, 'type_id': row.type_id, 'type': SIG_TYPES[row.type_id],
@@ -173,6 +280,7 @@ def get_threat_details(threat_id: int, database=DEFAULT_DATABASE) -> dict:
         result['severity'] = SEVERITY_MAP.get(row.severity_id, row.severity_id)
         result['raw_available'] = raw_available
         resolver = RecordIdResolver(session)
+        macro_resolver = MacroRoutineResolver(session)
         signatures = list(session.scalars(
             select(Signature).where(Signature.threat_id == threat_id, Signature.role == 'signature')
             .order_by(Signature.offset)))
@@ -181,8 +289,13 @@ def get_threat_details(threat_id: int, database=DEFAULT_DATABASE) -> dict:
             if sig.type_id == NID64_TYPE_ID and isinstance(sig.details, dict)
             and sig.details.get('has_record_id_layout')
             and sig.details.get('record_key_hex'))
+        macro_resolver.prepare(
+            key for sig in signatures
+            if sig.type_id == MACRO_SOURCE_TYPE_ID and isinstance(sig.details, dict)
+            for key in sig.details.get('routine_keys', ()))
         result['signatures'] = annotate_version_gates(
-            [signature_details(sig, raw_available, resolver) for sig in signatures])
+            [signature_details(sig, raw_available, resolver, macro_resolver)
+             for sig in signatures])
         result['boundary_ids'] = list(session.scalars(select(Signature.id).where(
             Signature.threat_id == threat_id, Signature.role.in_(['threat_begin', 'threat_end']))
             .order_by(Signature.offset)))
@@ -195,7 +308,7 @@ def get_signature_details(signature_id: int, database=DEFAULT_DATABASE) -> dict:
         if row is None:
             raise LookupError('Signature not found.')
         return signature_details(row, session.get(ImportInfo, 1).raw_included,
-                                 RecordIdResolver(session))
+                                 RecordIdResolver(session), MacroRoutineResolver(session))
 
 
 def get_raw_record(signature_id: int, database=DEFAULT_DATABASE) -> bytes:

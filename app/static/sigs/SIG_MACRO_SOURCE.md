@@ -49,6 +49,40 @@ The dwords are **internal hashes of normalised routines**, not file hashes.
 Do not compare them with MD5/SHA/CRC values computed over a document. They are
 shown as 16-hex strings so they can be correlated between records.
 
+### What the hex digits mean
+
+A printed key such as `000000009e69abe4` is the 64-bit key written as big-endian
+hex: the first eight digits are the high dword and the last eight the low dword.
+On the legacy Word 6 / Excel 5 stream the high dword is always zero, so the key
+is effectively the last eight digits. A thirty-two-bit record shows the key
+zero-extended like this as well.
+
+The engine computes the hash over its own normalised form of one macro routine
+(usually one procedure or statement block): whitespace, comments and some
+identifier detail are reduced before hashing. The hash function and the
+normalisation rules are internal to mpengine and are not documented.
+
+**The keys cannot be reversed.** No amount of lookup turns a key back into the
+original VBA text; a hash is one-way, and the pre-image was never shipped. So
+there is no source code to show for a key.
+
+### Correlating keys
+
+What *is* resolvable is reuse. The same routine is often copied between
+variants and families, and Defender ships a separate record for each detection
+that needs it. `defender2db` records every `MACRO_SOURCE` key in the
+`macro_routine_key` table, so the threat page can answer "which other
+detections require this exact routine?":
+
+* The same key may link variants of one family (`XM/Emperor.A` and
+  `XM/Emperor.B` share `0000000014c371f9`) or unrelated names that reuse a
+  helper routine.
+* A key unique to one record still tells you that routine is specific to this
+  detection and is a good fingerprint to look for in samples.
+
+Records built before `macro_routine_key` existed show "Rebuild the database to
+resolve routine keys" instead; rebuild with `--convert` to populate it.
+
 Examples from the shipped database:
 
 ```

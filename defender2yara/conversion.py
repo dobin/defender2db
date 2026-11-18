@@ -11,8 +11,13 @@ from tqdm import tqdm
 BATCH_SIZE = 5000
 _JSON_ENCODER = json.JSONEncoder(separators=(',', ':'), ensure_ascii=False)
 
+# SIGNATURE_TYPE_MACRO_SOURCE.  Its decoded details list the routine hashes that
+# are copied into ``macro_routine_key`` so other detections using the same
+# routine can be found without scanning every signature's details JSON.
+MACRO_SOURCE_TYPE_ID = 0x43
 
-def _insert_records(connection, signature_rows, raw_rows):
+
+def _insert_records(connection, signature_rows, raw_rows, macro_rows=()):
     # Positional executemany avoids SQLAlchemy's per-row mapping/bind processing
     # on the multi-million-record hot path, within the same managed transaction.
     connection.exec_driver_sql(
@@ -21,6 +26,10 @@ def _insert_records(connection, signature_rows, raw_rows):
         'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)', signature_rows)
     if raw_rows:
         connection.exec_driver_sql('INSERT INTO raw_record (signature_id,data) VALUES (?,?)', raw_rows)
+    if macro_rows:
+        connection.exec_driver_sql(
+            'INSERT INTO macro_routine_key (signature_id,threat_id,key) VALUES (?,?,?)',
+            macro_rows)
 
 from defender2yara.defender.dbthreat import DbThreat, Signature, Source
 from defender2yara.defender.signature.record_id import packed_record_id
@@ -64,6 +73,7 @@ def store_source(connection, vdm, *, include_raw, generate):
         connection.execute(insert(DbThreat), threat_rows)
 
     signature_rows, raw_rows = [], []
+    macro_rows = []
     decode_errors = Counter()
     intervals = iter(ownership)
     interval = next(intervals, None)
@@ -87,11 +97,15 @@ def store_source(connection, vdm, *, include_raw, generate):
         ))
         if include_raw:
             raw_rows.append((signature_id, vdm.raw_data[sig.offset:sig.offset + sig.record_size]))
+        if sig.sig_type_id == MACRO_SOURCE_TYPE_ID and isinstance(details, dict):
+            for key in details.get('routine_keys', ()):
+                macro_rows.append((signature_id, owner, key))
         if len(signature_rows) >= BATCH_SIZE:
-            _insert_records(connection, signature_rows, raw_rows)
+            _insert_records(connection, signature_rows, raw_rows, macro_rows)
             signature_rows.clear()
             raw_rows.clear()
+            macro_rows.clear()
     if signature_rows:
-        _insert_records(connection, signature_rows, raw_rows)
+        _insert_records(connection, signature_rows, raw_rows, macro_rows)
     logger.info('Stored %s in %.1f seconds', vdm.vdm_type, time.perf_counter() - started)
     return decode_errors

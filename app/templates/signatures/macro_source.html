@@ -1,9 +1,36 @@
 {% set d = sig.details %}
+{% set references = d.get('routine_references') or {} %}
 <dl>
   <dt>Source kind</dt><dd>{{ d.get('source_kind_label', '') }} ({{ d.get('source_kind') }})</dd>
-  <dt>Routines</dt><dd>{{ d.get('routine_count') }}{% if d.get('has_second_hash_array') %} (64-bit keys){% else %} (32-bit keys){% endif %}</dd>
+  <dt>Routines</dt><dd>{{ d.get('routine_count') }}{% if d.get('has_second_hash_array') %} (64-bit keys){% else %} (32-bit keys, high half always zero){% endif %}</dd>
   {% if d.get('record_name') %}<dt>Engine label</dt><dd>{{ d.get('record_name') }}</dd>{% endif %}
 </dl>
-<ol>
-  {% for key in d.get('routine_keys', []) %}<li><code>{{ key }}</code></li>{% endfor %}
-</ol>
+<table class="table table-sm">
+  <thead><tr><th>#</th><th>Routine key</th><th>Same routine also required by</th></tr></thead>
+  <tbody>
+  {% for key in d.get('routine_keys', []) %}
+    {% set reference = references.get(key) or {} %}
+    <tr>
+      <td>{{ loop.index0 }}</td>
+      <td><code>{{ key }}</code></td>
+      <td>
+        {% if reference.get('status') == 'resolved' %}
+          {% if reference.get('threats') %}
+            {% for threat in reference.get('threats') %}<a href="{{ url_for('views.get_threat', local_id=threat.get('threat_id')) }}#signature-{{ threat.get('signature_id') }}">{{ threat.get('threat_name') or ('local ID ' ~ threat.get('threat_id')) }}</a>{% if not loop.last %}, {% endif %}{% endfor %}
+            {% if reference.get('truncated') %} and {{ reference.get('other_threat_count') - reference.get('threats')|length }} more{% endif %}
+          {% else %}
+            <span class="text-muted">No other threat in this database uses it.</span>
+          {% endif %}
+        {% elif reference.get('status') == 'unavailable' %}
+          <span class="text-muted">Rebuild the database to resolve routine keys.</span>
+        {% endif %}
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+<p class="text-muted small">
+  These are one-way hashes of normalised macro routines, not file hashes, and
+  they cannot be converted back into VBA text. What they can be compared
+  against is the same routine reused by another detection.
+</p>

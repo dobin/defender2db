@@ -448,7 +448,9 @@ high array (7,000 records); VBA and formula records usually include it (9,210).
 `FUN_1802f81bc(ctx, kind, stream, count)`, which maps each 8-byte key to the
 records that require it.  `FUN_18024dc90` then requires the record's keys to
 occur **in order** in that stream.  The keys are internal routine hashes, not
-file hashes; only 52 records are named (33 `!#SSF:`/`!#ALF:`/`!#SLF:`/
+file hashes, and cannot be reversed to macro text; the database indexes them in
+`macro_routine_key` so the threat page can show which other detections require
+the same routine.  Only 52 records are named (33 `!#SSF:`/`!#ALF:`/`!#SLF:`/
 `!#Mcrosrc:`/`!#ASR` feed labels).
 
 ### Coverage

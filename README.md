@@ -79,10 +79,12 @@ Lua conversion fails; exact raw bytes are retained only with `--include-raw`.
 
 ### Structured threat data
 
-A database is one import, with SQLAlchemy 2.x mappings for five tables:
+A database is one import, with SQLAlchemy 2.x mappings for six tables:
 `import_info` (schema/decoder/signature/engine versions, conversion time and raw
-capture flag), `source` (effective stream identity), `threat`, `signature`, and
-`raw_record`. It is a parsed snapshot, not a serialized Python object graph.
+capture flag), `source` (effective stream identity), `threat`, `signature`,
+`macro_routine_key` (indexed `MACRO_SOURCE` routine hashes, used to find the
+same routine in other detections), and `raw_record`. It is a parsed snapshot,
+not a serialized Python object graph.
 Legacy pickle databases and unsupported schema versions require rebuilding with
 `--convert`; there is no migration or automatic re-decoding on read.
 

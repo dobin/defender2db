@@ -147,6 +147,48 @@ class PersistenceTests(unittest.TestCase):
         unresolved = get_threat_details(1, self.path.with_name("missing.sqlite"))["signatures"][0]
         self.assertEqual(unresolved["details"]["referenced_record"], {"status": "not_shipped"})
 
+    def test_macro_source_keys_resolve_to_other_detections(self):
+        first = (bytes([0]) + struct.pack('<I', 2)
+                 + struct.pack('<II', 0x11111111, 0x22222222))
+        second = bytes([0]) + struct.pack('<I', 1) + struct.pack('<I', 0x22222222)
+        vdm = synthetic_vdm(
+            threat_records([tlv(0x43, first)], defender_id=123)
+            + threat_records([tlv(0x43, second)], defender_id=124,
+                             name='Test:Win32/Other.A'))
+        self.publish(sources=[vdm])
+
+        details = get_threat_details(1, self.path)
+        signature = details['signatures'][0]
+        references = signature['details']['routine_references']
+        self.assertEqual(references['0000000011111111'], {
+            'status': 'resolved', 'record_count': 1, 'threat_count': 1,
+            'used_by_current': True, 'other_threat_count': 0,
+            'threats': [], 'truncated': False,
+        })
+        other = get_threat_details(2, self.path)['signatures'][0]
+        shared = references['0000000022222222']
+        self.assertTrue(shared['used_by_current'])
+        self.assertEqual(shared['other_threat_count'], 1)
+        self.assertEqual([(item['threat_id'], item['threat_name'],
+                           item['signature_id']) for item in shared['threats']],
+                         [(2, 'Test:Win32/Other.A', other['id'])])
+        self.assertEqual(
+            get_signature_details(signature['id'], self.path)['details'],
+            signature['details'])
+
+    def test_macro_source_references_degrade_when_index_is_missing(self):
+        payload = bytes([0]) + struct.pack('<I', 1) + struct.pack('<I', 0x12345678)
+        self.publish(sources=[synthetic_vdm(threat_records([tlv(0x43, payload)]))])
+        engine = database_engine(self.path)
+        try:
+            with engine.begin() as connection:
+                connection.exec_driver_sql('DROP TABLE macro_routine_key')
+        finally:
+            engine.dispose()
+        details = get_threat_details(1, self.path)['signatures'][0]['details']
+        self.assertEqual(details['routine_references']['0000000012345678'],
+                         {'status': 'unavailable'})
+
     def test_database_without_record_ids_still_reads(self):
         from defender2yara.defender.signature.record_id import packed_record_id
 
