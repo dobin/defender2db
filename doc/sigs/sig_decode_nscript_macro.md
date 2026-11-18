@@ -241,20 +241,27 @@ condition.  It can be decoded and counted, but not converted into YARA text.
 
 ### Related `NSCRIPT_NORMAL` (`0x27`) and `NSCRIPT_CURE` (`0x2c`)
 
-`0x27` uses the same building blocks and is documented here for context (not
-implemented):
+`0x27` uses the same building blocks and is now fully decoded in
+`doc/sigs/sig_decode_ck_nscript_normal.md` §4.  It is the general container for
+one or more script conditions:
 
 ```
 u8  name_len; u8 name[name_len]
 u8  count
-u32 hash_or_length[count]
-u8  form                   0 = two-hash form, != 0 = length+hash form
-...
+u32 hash_a[count]
+u8  flags                  0 = hash-pair form, != 0 = window + hash-pair form
 
-form == 0:  u32 hash2                       (paired with hash_or_length[0])
-form != 0:  u32 value, u32 window_length    (crc32 = hash_or_length[0])
-optional:   u32 weight                     (only the low byte is used)
+flags == 0:  u32 hash_b[count]              each hash is paired
+flags != 0:  u32 hash1, u32 match_length    first condition: rolling window
+             u32 hash_b[count]              optional, hash_b[0] reserved
+optional:    u32 weight                     only the low byte is used
 ```
+
+`hash1`/`match_length`/`hash_a[0]` in the window form are exactly
+`NSCRIPT_SP`'s `hash1`/`match_length`/`hash2`, and `flags` low values 1/2 carry
+the same legacy `:IRC/` case.  Real threats contribute 9,775 records; the 11
+compact records omit `hash_b` entirely.  The decoder is `NscriptNormalSig` in
+`defender/signature/nscript.py`.
 
 `0x2c` (`NSCRIPT_CURE`) records use a different, bytecode-like payload
 (e.g. `05 e4 ff a7 88 00 00 00 00 02 00 00 00 0d 0a`) and are not handled.

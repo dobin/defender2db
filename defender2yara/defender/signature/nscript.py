@@ -1,4 +1,5 @@
-"""Script-content signatures: NSCRIPT_SP (0x28) and NSCRIPT_BRUTE (0x29).
+"""Script-content signatures: NSCRIPT_NORMAL (0x27), NSCRIPT_SP (0x28) and
+NSCRIPT_BRUTE (0x29).
 
 Both types are produced by the ``nscript`` module (``FUN_180a65d00``).  They
 match byte-level features of *scripts* (JS/VBS/BAT/PowerShell/Python/IRC) that
@@ -196,6 +197,202 @@ def _read_name(payload: bytes, limit: int) -> tuple:
         raise ValueError("Truncated NSCRIPT name")
     raw = payload[1:1 + name_length]
     return raw, raw.decode("utf-8", "replace"), 1 + name_length
+
+
+class NscriptNormalSig(BaseSig):
+    """SIGNATURE_TYPE_NSCRIPT_NORMAL (0x27) — multi-condition script rule.
+
+    Layout::
+
+        u8   name_length      0..0x3f (0 = no inline name)
+        u8   name[name_length]
+        u8   count            number of 32-bit script hashes that follow
+        u32  hash_a[count]
+        u8   flags
+        # flags == 0: every hash is a pair member
+        u32  hash_b[count]
+        # flags != 0: first hash is the second half of a window condition
+        u32  hash1            paired with hash_a[0]
+        u32  match_length     script window length
+        u32  hash_b[count]    optional; hash_b[0] is reserved, hash_b[1:] pair
+                              with hash_a[1:]
+        u32  weight           optional trailing dword; only the low byte is used
+
+    The engine parser is ``FUN_180180f0c`` (shared with ``NSCRIPT_SP``).  With
+    ``flags == 0`` each ``{hash_a[i], hash_b[i]}`` pair is inserted into the
+    ``DAT_181106a20`` condition vector.  With ``flags != 0`` the first entry
+    becomes ``{value=hash1, window_length, crc32=hash_a[0], flags}`` in
+    ``DAT_181106a18`` (the length/rolling-CRC form also used by
+    ``NSCRIPT_SP``) and the remaining hashes form pairs.
+
+    Eleven shipped records use a compact variant: ``flags == 0`` and no
+    ``hash_b`` array at all (``count == 1``).  They are valid interning records
+    produced by the legacy ``:IRC/`` special case, even though the runtime
+    parser never sees them.
+    """
+
+    def __init__(self, data: bytes, ptr: int = 0) -> None:
+        self.parse_common_header(data, ptr)
+        assert self.sig_type == SIG_TYPES[0x27]
+
+        raw_name, self.name, offset = _read_name(self.sig_data, 0x3F)
+        if len(self.sig_data) < offset + 1:
+            raise ValueError(
+                f"Truncated {self.sig_type} payload: {len(self.sig_data)} bytes"
+            )
+
+        self.name_raw = raw_name
+        self.name_length = len(raw_name)
+        self.count = self.sig_data[offset]
+        offset += 1
+        if self.count == 0:
+            raise ValueError(f"{self.sig_type} record has no script hashes")
+        hash_a_end = offset + 4 * self.count
+        if hash_a_end + 1 > len(self.sig_data):
+            raise ValueError(
+                f"Truncated {self.sig_type} hash array: "
+                f"{len(self.sig_data)} bytes for {self.count} hashes"
+            )
+        self.hash_a = list(struct.unpack_from(
+            f"<{self.count}I", self.sig_data, offset
+        ))
+        offset = hash_a_end
+
+        self.flags = self.sig_data[offset]
+        offset += 1
+        self.flag_high = bool(self.flags & 0x80)
+        self.flags_low = self.flags & 0x7F
+        self.irc_special_case = self.flags_low in (1, 2)
+
+        self.hash_b = []
+        self.compact_variant = False
+        self.window_hash = None
+        self.window_length = None
+        if self.flags == 0:
+            remaining = len(self.sig_data) - offset
+            if remaining >= 4 * self.count:
+                self.hash_b = list(struct.unpack_from(
+                    f"<{self.count}I", self.sig_data, offset
+                ))
+                offset += 4 * self.count
+            elif remaining == 0:
+                self.compact_variant = True
+            else:
+                raise ValueError(
+                    f"Truncated {self.sig_type} hash pair array: "
+                    f"{remaining} bytes for {self.count} hashes"
+                )
+        else:
+            if offset + 8 > len(self.sig_data):
+                raise ValueError(
+                    f"Truncated {self.sig_type} window condition"
+                )
+            self.window_hash, self.window_length = struct.unpack_from(
+                "<II", self.sig_data, offset
+            )
+            offset += 8
+            remaining = len(self.sig_data) - offset
+            if remaining >= 4 * self.count:
+                self.hash_b = list(struct.unpack_from(
+                    f"<{self.count}I", self.sig_data, offset
+                ))
+                offset += 4 * self.count
+
+        self.weight = None
+        if len(self.sig_data) - offset >= 4:
+            self.weight = struct.unpack_from("<I", self.sig_data, offset)[0]
+            offset += 4
+        self.weight_low = None if self.weight is None else self.weight & 0xFF
+        self.expected_size = offset
+
+        self.conditions = self._build_conditions()
+        self.decode_warnings = []
+        if self.expected_size != len(self.sig_data):
+            self.decode_warnings.append(
+                f"Unexpected trailing data: {len(self.sig_data) - self.expected_size} bytes"
+            )
+        if self.flags != 0 and self.window_length is not None and self.window_length < 0x21:
+            self.decode_warnings.append(
+                "Script window length below the engine minimum (0x21)"
+            )
+
+    def _build_conditions(self) -> list:
+        conditions = []
+        if self.flags == 0:
+            for first, second in zip(self.hash_a, self.hash_b):
+                conditions.append({
+                    "kind": "hash_pair",
+                    "hash1": first,
+                    "hash2": second,
+                })
+            return conditions
+
+        conditions.append({
+            "kind": "window",
+            "hash1": self.window_hash,
+            "hash2": self.hash_a[0],
+            "match_length": self.window_length,
+        })
+        for first, second in zip(self.hash_a[1:], self.hash_b[1:]):
+            conditions.append({
+                "kind": "hash_pair",
+                "hash1": first,
+                "hash2": second,
+            })
+        return conditions
+
+    def to_details(self) -> dict:
+        return {
+            "record_name": self.name,
+            "has_name": self.name_length > 0,
+            "count": self.count,
+            "flags": self.flags,
+            "flags_low": self.flags_low,
+            "flag_0x80": self.flag_high,
+            "irc_special_case": self.irc_special_case,
+            "condition_form": "window" if self.flags else "hash_pairs",
+            "compact_variant": self.compact_variant,
+            "window_hash": self.window_hash,
+            "window_length": self.window_length,
+            "hash_a": list(self.hash_a),
+            "hash_b": list(self.hash_b),
+            "weight": self.weight,
+            "weight_low": self.weight_low,
+            "conditions": self.conditions,
+            "decode_warnings": list(self.decode_warnings),
+            "summary": self.describe(),
+        }
+
+    def describe(self) -> str:
+        if self.flags == 0:
+            pairs = ",".join(
+                f"{first:08x}:{second:08x}"
+                for first, second in zip(self.hash_a, self.hash_b)
+            )
+            text = f"NSCRIPT_NORMAL hash_pairs=[{pairs}]"
+            if self.compact_variant:
+                text = (
+                    f"NSCRIPT_NORMAL compact hash1=0x{self.hash_a[0]:08x} "
+                    "flags=0x00"
+                )
+        else:
+            text = (
+                f"NSCRIPT_NORMAL window hash1=0x{self.window_hash:08x} "
+                f"hash2=0x{self.hash_a[0]:08x} "
+                f"len={self.window_length} flags=0x{self.flags:02x}"
+            )
+            if self.hash_b:
+                pairs = ",".join(
+                    f"{first:08x}:{second:08x}"
+                    for first, second in zip(self.hash_a[1:], self.hash_b[1:])
+                )
+                if pairs:
+                    text += f" extra_pairs=[{pairs}]"
+        if self.weight_low is not None:
+            text += f" weight={self.weight_low}"
+        if self.name_length:
+            text += f" name={self.name!r}"
+        return text
 
 
 class NscriptSpSig(BaseSig):

@@ -111,12 +111,32 @@ and telemetry feeds:
 !#SCRIPT:Backdoor:Win32/AluminumApt!lowfi
 ```
 
+## `NSCRIPT_NORMAL` (`0x27`)
+
+`NSCRIPT_NORMAL` is the general container for the same condition vector:
+
+```
+u8  name_len; u8 name[name_len]
+u8  count
+u32 hash_a[count]
+u8  flags
+flags == 0:  u32 hash_b[count]          every hash is a pair
+flags != 0:  u32 hash1, u32 match_length  rolling-window condition
+             u32 hash_b[count]          optional; hash_b[0] reserved
+optional:    u32 weight                 only the low byte is used
+```
+
+With `flags == 0` every `{hash_a[i], hash_b[i]}` pair is a two-hash condition.
+With `flags != 0` the first condition is exactly an `NSCRIPT_SP`-style window
+(`hash1`, `match_length`, `hash2 = hash_a[0]`); flags `1`/`2` carry the same
+legacy `:IRC/` special case.  Real threats contribute 9,775 records; 9,917 are
+ordinary hash-pair records, 787 are window conditions, and 11 are a compact
+variant without the `hash_b` array.  The hashes are still normalised script
+fragments, so this type cannot be rendered as text either.
+
 ## Related types
 
-* `NSCRIPT_NORMAL` (`0x27`) is the multi-condition form of the same idea
-  (a list of two-hash or length+hash conditions plus a weight).
 * `NSCRIPT_CURE` (`0x2c`) is a bytecode-like script record used by feeds.
 * `MACRO_SOURCE` (`0x43`) is the macro/VBA equivalent of these script rules;
   see `SIG_MACRO_SOURCE.md`.
-
-These three are not implemented yet in the decoder.
+* `NSCRIPT_NORMAL` (`0x27`) is now decoded; `NSCRIPT_CURE` is not.

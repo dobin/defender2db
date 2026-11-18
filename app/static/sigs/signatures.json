@@ -52,9 +52,21 @@
     "description": "A compact script-content condition: two hashes of normalised script fragments plus the matched window length.",
     "detail": "SIG_NSCRIPT.md"
   },
+  "NSCRIPT_NORMAL": {
+    "description": "A general script-content condition list: hash pairs and/or a rolling-window hash of normalised script text.",
+    "detail": "SIG_NSCRIPT.md"
+  },
   "NSCRIPT_BRUTE": {
     "description": "A readable script-content signature: normalised script text with wildcards, plus a script-type restriction and search direction.",
     "detail": "SIG_NSCRIPT.md"
+  },
+  "CKSIMPLEREC": {
+    "description": "A checksum-region file check: literal first four bytes, a header CRC-32, and one region CRC-32.",
+    "detail": "SIG_CKREC.md"
+  },
+  "CKOLDREC": {
+    "description": "An older two-region file check: two explicit offset/length windows with CRC-32 values.",
+    "detail": "SIG_CKREC.md"
   },
   "MACRO_SOURCE": {
     "description": "A macro source signature: an ordered sequence of normalised macro/VBA routine hashes for a specific macro stream kind.",

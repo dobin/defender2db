@@ -1,0 +1,31 @@
+{% set d = sig.details %}
+<dl>
+  {% if d.get('layout') == 'cksimplerec' %}
+  <dt>File prefix</dt>
+  <dd><code>{{ d.get('file_prefix_hex') }}</code> {{ d.get('file_prefix_text') }}
+    <small class="text-muted">literal first four file bytes, used as the lookup key</small></dd>
+  <dt>Header CRC</dt>
+  <dd>CRC-32 of the first {{ d.get('header_length') }} bytes:
+    <code>{{ d.get('header_crc')|hexnum(8) }}</code></dd>
+  <dt>Checked region</dt>
+  <dd>offset {{ d.get('region_offset') }}, length {{ d.get('region_length') }},
+    CRC-32 <code>{{ d.get('region_crc')|hexnum(8) }}</code></dd>
+  {% else %}
+  <dt>Region 1</dt>
+  <dd>offset {{ d.get('region1_offset') }}, length {{ d.get('region1_length') }},
+    CRC-32 <code>{{ d.get('region1_crc')|hexnum(8) }}</code></dd>
+  <dt>Region 2</dt>
+  <dd>offset {{ d.get('region2_offset') }}, length {{ d.get('region2_length') }},
+    CRC-32 <code>{{ d.get('region2_crc')|hexnum(8) }}</code></dd>
+  {% endif %}
+  <dt>Scan group</dt><dd>{{ d.get('scan_group') }}</dd>
+  <dt>Flags</dt>
+  <dd><code>{{ d.get('flags')|hexnum(8) }}</code>
+    <small class="text-muted">low 26 bits <code>{{ d.get('flags_low')|hexnum(8) }}</code></small></dd>
+  {% if d.get('record_name') %}<dt>Engine label</dt><dd>{{ d.get('record_name') }}</dd>{% endif %}
+</dl>
+<p class="text-muted small">
+  The checksum is Defender's CRC-32 (init 0xffffffff, no final xor). The record
+  is a region hash, not a byte pattern; it is decoded for analysis and is not
+  emitted to YARA.
+</p>

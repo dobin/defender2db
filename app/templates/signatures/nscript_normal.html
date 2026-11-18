@@ -1,0 +1,44 @@
+{% set d = sig.details %}
+<p>{{ d.get('summary', '') }}</p>
+<dl>
+  <dt>Form</dt>
+  <dd>{{ d.get('condition_form') }}
+    {% if d.get('compact_variant') %} (compact variant, no pair array){% endif %}</dd>
+  {% if d.get('condition_form') == 'window' %}
+  <dt>Window condition</dt>
+  <dd>hash1 <code>{{ d.get('window_hash')|hexnum(8) }}</code>
+    &#183; hash2 <code>{{ d.get('hash_a', [])[0]|hexnum(8) }}</code>
+    &#183; length {{ d.get('window_length') }}</dd>
+  {% endif %}
+  <dt>Flags</dt>
+  <dd><code>{{ d.get('flags')|hexnum(2) }}</code>
+    {% if d.get('flag_0x80') %}(extra flag 0x80){% endif %}
+    {% if d.get('irc_special_case') %}, legacy :IRC/ case{% endif %}</dd>
+  {% if d.get('weight_low') is not none %}<dt>Weight</dt><dd>{{ d.get('weight_low') }}</dd>{% endif %}
+  {% if d.get('record_name') %}<dt>Engine label</dt><dd>{{ d.get('record_name') }}</dd>{% endif %}
+</dl>
+
+{% set conditions = d.get('conditions', []) %}
+{% if conditions %}
+<table class="table table-sm table-bordered align-middle">
+  <thead>
+    <tr><th>#</th><th>Kind</th><th>Hash 1</th><th>Hash 2</th><th>Window</th></tr>
+  </thead>
+  <tbody>
+    {% for condition in conditions %}
+    <tr>
+      <td>{{ loop.index }}</td>
+      <td>{{ condition.get('kind') }}</td>
+      <td><code>{{ condition.get('hash1')|hexnum(8) }}</code></td>
+      <td><code>{{ condition.get('hash2')|hexnum(8) }}</code></td>
+      <td>{% if condition.get('match_length') is not none %}{{ condition.get('match_length') }}{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+<p class="text-muted small">
+  The hashes are 32-bit hashes of normalised script text, not readable
+  fragments or file hashes. The record can be decoded and counted, but not
+  rendered as a YARA pattern.
+</p>
