@@ -307,7 +307,15 @@ Normal header (12 bytes):
 
 The headerless variant replaces those 12 bytes with
 `01 00 00 00 00 00 00 00 00 00 00 00`; everything after it is identical, so a
-decoder can simply restore the normal header and undump the rest.
+decoder can simply restore the normal header and undump the rest.  **The code
+array of the shipped headerless records is nevertheless not plain Lua 5.1**:
+every one of the 154 records has instruction words with opcodes in the unused
+38..63 range (about a third of the words), and every function's last word is the
+fixed `0x6305c366`, i.e. the encoded `RETURN`.  None of the 2.17M instructions
+in normal-header records does this.  The wrapper, prototypes, constants and
+debug section still decode, so `LuaSig` reports `code_encoding = "encoded"` and
+the converter skips decompilation for these records instead of feeding the code
+to a Lua 5.1 decompiler.
 
 The undumper (`FUN_180a9a76c`) reads a classic Lua 5.1 `Function`:
 
@@ -370,9 +378,12 @@ Top string constants across the corpus: `mp`, `INFECTED`, `CLEAN`,
 `LuaSig` parses the wrapper, splits the attributes into pairs and walks the
 whole chunk (prototypes, instructions, constants, debug info).  The existing
 pipeline additionally decompiles the chunk with the bundled Python Lua
-decompiler (`defender2yara/defender/lua_backend.py`); because `LuaSig` now
-exposes `lua_chunk_data` with the restored header, the 154 headerless records
-decompile as well instead of being reported as unsupported.
+decompiler (`defender2yara/defender/lua_backend.py`); `LuaSig` exposes
+`lua_chunk_data` with the restored header, and normal-header records decompile
+normally.  The 154 headerless records are reported as
+`code_encoding = "encoded"` (see *The Lua chunk*) and are not sent to the
+decompiler, because their instruction array is not Lua 5.1 — attempting it only
+produced one decompiler and one disassembler warning per record.
 
 A Lua record is detection *logic*, so it cannot become a byte-pattern YARA
 rule.  The useful artefacts are the phase, the attribute list, the constants

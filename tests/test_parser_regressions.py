@@ -214,6 +214,31 @@ class LuaTests(unittest.TestCase):
         self.assertEqual(diagnostics, [])
         self.assertIn(b"return", scripts[0])
 
+    def test_encoded_headerless_body_skips_decompiler(self):
+        # The shipped headerless records keep the wrapper but encode the
+        # instruction words; decode them as such and never call the Lua 5.1
+        # decompiler (which would log two or three warnings per record).
+        chunk = bytearray(mplua_chunk())
+        chunk[32:40] = struct.pack('<II', 0x6305C366, 0x6305C366)
+        body = b"\x01" + b"\0" * 11 + bytes(chunk[12:])
+        name = b"Bedep\0"
+        attributes = b"Includes\0Bedep\0"
+        payload = bytes([len(name), 0x11]) + struct.pack("<HI", len(attributes), len(body))
+        payload += name + attributes + body
+        sig = LuaSig(record(0xBD, payload))
+        self.assertEqual(sig.code_encoding, "encoded")
+        threat = SimpleNamespace(threat_name="!InfrastructureShared", threat_id=1, signatures=[sig])
+        sig.offset = 0
+        diagnostics = []
+        with patch('defender2yara.main.lua_decompile_data',
+                   side_effect=AssertionError('encoded bytecode must not be decompiled')):
+            with self.assertNoLogs("defender2yara", level="WARNING"):
+                scripts = get_lua_from_threat(threat, diagnostics)
+        self.assertEqual(scripts, [])
+        self.assertEqual(diagnostics, [{
+            'offset': 0, 'status': 'unsupported', 'message': 'Encoded MpLua bytecode',
+        }])
+
     def test_missing_header_and_failed_decompile(self):
         sig = SimpleNamespace(sig_type='SIGNATURE_TYPE_LUASTANDALONE', sig_data=b'no Lua')
         threat = SimpleNamespace(threat_name='test', signatures=[sig])

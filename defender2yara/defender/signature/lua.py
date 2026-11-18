@@ -25,6 +25,15 @@ dword of ``1`` as that headerless form and skips 12 bytes either way, so the
 undumped function follows in both cases.  The loader (``FUN_180a9a76c``) drops
 all debug information, but the serialised chunk still contains it.
 
+Only the normal-header form stores plain Lua 5.1 instruction words.  Every one
+of the headerless records in the shipped database carries a *non-standard*
+instruction array: about a third of the words have an opcode outside 0..37
+(``0x6305c366`` is the fixed last word of every function, i.e. the encoded
+``RETURN``), while none of the 2.2M instructions in normal-header records does.
+The wrapper, constants and nested prototypes still decode normally, so
+``code_encoding`` reports ``"encoded"`` for those chunks and callers must not
+hand them to a Lua 5.1 decompiler.
+
 This module decodes the wrapper, splits the attributes into name/value pairs and
 walks the whole Lua chunk (function prototypes, code, constants), so the
 script's literals and structure are available without running a decompiler.
@@ -192,6 +201,11 @@ class LuaFunction:
             counts[name] = counts.get(name, 0) + 1
         return counts
 
+    @property
+    def invalid_opcode_count(self) -> int:
+        return sum(1 for instruction in self.code
+                   if (instruction & 0x3F) >= len(LUA_OPCODES))
+
 
 class LuaChunk:
     """A parsed MpLua / Lua 5.1 chunk."""
@@ -237,6 +251,15 @@ class LuaChunk:
                 counts[name] = counts.get(name, 0) + value
         return counts
 
+    @property
+    def invalid_opcode_count(self) -> int:
+        return sum(function.invalid_opcode_count for function in self.functions)
+
+    @property
+    def is_plain_bytecode(self) -> bool:
+        """True when every instruction word uses a documented Lua 5.1 opcode."""
+        return self.invalid_opcode_count == 0
+
     def to_details(self) -> dict:
         functions = self.functions
         strings: list[str] = []
@@ -260,6 +283,7 @@ class LuaChunk:
             "number_encoding": self.header.get("number_encoding", ""),
             "functions": len(functions),
             "instructions": sum(len(function.code) for function in functions),
+            "invalid_opcodes": self.invalid_opcode_count,
             "constants": sum(len(function.constants) for function in functions),
             "string_count": len(strings),
             "string_constants": [
@@ -484,6 +508,7 @@ class LuaSig(BaseSig):
         ]
 
         self.chunk: LuaChunk | None = None
+        self.code_encoding = "unknown"
         self.decode_warnings = []
         if self.lua_chunk_data is None:
             self.decode_warnings.append("Unrecognized Lua script body")
@@ -492,6 +517,16 @@ class LuaSig(BaseSig):
                 self.chunk = parse_lua_chunk(self.lua_chunk_data)
             except (ValueError, struct.error) as error:
                 self.decode_warnings.append(f"Invalid Lua chunk: {error}")
+        if self.chunk is not None:
+            if self.chunk.is_plain_bytecode:
+                self.code_encoding = "plain"
+            else:
+                self.code_encoding = "encoded"
+                self.decode_warnings.append(
+                    "Non-standard Lua bytecode: "
+                    f"{self.chunk.invalid_opcode_count} of "
+                    f"{self.chunk.instruction_count} instructions have an invalid opcode"
+                )
 
     def to_details(self) -> dict:
         chunk = self.chunk.to_details() if self.chunk is not None else None
@@ -507,6 +542,7 @@ class LuaSig(BaseSig):
             ),
             "body_size": self.body_length,
             "body_format": self.body_format,
+            "code_encoding": self.code_encoding,
             "has_lua_bytecode": self.lua_chunk_data is not None,
             "chunk": chunk,
             "decode_warnings": list(self.decode_warnings),

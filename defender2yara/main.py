@@ -383,6 +383,14 @@ def get_lua_from_threat(threat:Threat, diagnostics=None) -> List[bytes]:
                         continue
                 else:
                     lua_data = body[lua_header_offset:]
+            if getattr(sig, "code_encoding", None) == "encoded":
+                # The wrapper is readable but the instruction array is not
+                # plain Lua 5.1 (see signature/lua.py), so every decompiler
+                # and disassembler attempt would fail.  Report it once.
+                logger.debug("Encoded Lua bytecode; skipping decompilation: %s", context)
+                diagnostics.append({'offset': offset, 'status': 'unsupported',
+                                    'message': 'Encoded MpLua bytecode'})
+                continue
             lua_decompiled = lua_decompile_data(lua_data)
             if lua_decompiled is None or b'DECOMPILER ERROR' in lua_decompiled:
                 logger.warning("Lua decompilation incomplete: %s lua_header_offset=%d; trying disassembly", context, lua_header_offset)

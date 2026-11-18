@@ -61,8 +61,10 @@ The phase names line up with the scripts: `UACTrigger` holds
 
 The body is a normal Lua 5.1 chunk: a 12-byte header (`\x1bLuaQ…`) followed by a
 function prototype with instructions, constants and nested functions. A second
-variant replaces the header with `01 00 00 00 …` and is otherwise identical
-("headerless"); the engine accepts both.
+variant replaces the header with `01 00 00 00 …` ("headerless"); the engine
+accepts both, but the headerless records in this database encode the instruction
+words (their opcodes are outside 0..37), so only their wrapper, function
+structure and constants can be decoded.
 
 Two quirks matter when reading chunks: string lengths are 32-bit, and the
 header's `integral` byte is `1`, so number constants are signed integers, not
@@ -77,6 +79,7 @@ doubles.
 | in real threats | 452 (anonymous) |
 | function prototypes / instructions | 69,057 / 2,241,907 |
 | string constants | 631,623 |
+| headerless records with encoded instructions | 154 |
 
 The decoder is `defender2yara/defender/signature/lua.py` (`LuaSig`), which also
 walks the chunk so the phase, attributes, function structure and string

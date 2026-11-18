@@ -649,9 +649,11 @@ library lists such as `BMLuaLib`, `TechniqueTracker`, `LuaFuncHelper`),
 The body is a normal Lua 5.1 chunk (`FUN_1803e6f18` → `FUN_180a9a76c`): function
 prototypes, 32-bit string lengths, **signed integer** number constants and
 debug info (dropped by the loader).  `LuaSig` walks all of it: 69,057 function
-prototypes, 2,241,907 instructions and 631,623 string constants in this DB, plus
-the restored-header chunk that lets the bundled decompiler handle the 154
-headerless records too.  A script is detection logic, so it does not become a
+prototypes, 2,241,907 instructions and 631,623 string constants in this DB.  The
+154 headerless (`01 00 …`) records keep the same wrapper and readable
+constants, but their instruction array is not Lua 5.1 (opcodes outside 0..37 and
+a fixed encoded `RETURN` word), so they are marked `code_encoding = "encoded"`
+and not decompiled.  A script is detection logic, so it does not become a
 YARA byte pattern; the decompiled source and the constants are the useful
 output.
 

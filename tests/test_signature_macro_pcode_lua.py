@@ -188,6 +188,21 @@ class LuaStandaloneTests(SignatureSnapshotMixin, unittest.TestCase):
         self.assertIsNotNone(sig.chunk)
         self.assertEqual(sig.decode_status, "decoded")
 
+    def test_headerless_encoded_bytecode_is_not_plain(self):
+        # Shipped headerless records keep the normal wrapper but encode the
+        # instruction words: 0x6305c366 is the fixed encoded RETURN.  The
+        # wrapper still parses, so only the code encoding is flagged.
+        body = b"\x01" + b"\0" * 11 + lua_function(code=(0x6305C366,))
+        sig = LuaSig(tlv(0xBD, lua_payload(body=body)))
+        self.assertEqual(sig.body_format, "mplua_headerless")
+        self.assertIsNotNone(sig.chunk)
+        self.assertEqual(sig.code_encoding, "encoded")
+        self.assertEqual(sig.decode_status, "partial")
+        self.assertIn("Non-standard Lua bytecode", sig.decode_warnings[0])
+        details = sig.to_details()
+        self.assertEqual(details["code_encoding"], "encoded")
+        self.assertEqual(details["chunk"]["invalid_opcodes"], 1)
+
     def test_invalid_chunk_is_partial(self):
         sig = LuaSig(tlv(0xBD, lua_payload(body=b"\x1bLuaQ\x00\x01\x04\x08\x04\x08\x01" + b"\0" * 8)))
         self.assertEqual(sig.decode_status, "partial")
