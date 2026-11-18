@@ -133,6 +133,8 @@ IL2 patterns, `!#OrgSignerRmmNormal` for aggregator records). See
   object. That changes how hard the sample gets looked at, not whether it matches.
 * **A NID64 can be resolved further than a NID** when its key is a packed record id, but
   the result is still just "this record/object exists in namespace K" - not a match rule.
+  The web UI resolves that case: a NID64 card links to the referenced record and its
+  owning threat when the shipped database contains it.
 
 ## What to do with it
 

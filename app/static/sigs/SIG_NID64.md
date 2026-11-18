@@ -57,6 +57,19 @@ the GoLang allow-list keys decode to an implausible `0xea` "type" and a 4.7 MB "
 `kind` byte, not the key layout, is the reliable part. Treat the packed-id reading as a
 strong hint, not a guarantee.
 
+## Following the reference in this UI
+
+When the key has the packed record-id layout, the NID64 card shows a **Referenced record**
+line linking to the record it points at. The database stores each signature's record id
+(`crc32(payload) | type << 32 | size << 40`), so the crc, type and size in the key must all
+match a shipped record. The link goes to that record's card and names its owning threat.
+
+If no shipped record matches, the key is a reference to runtime/cloud data; the card says
+so instead of inventing a target. Resolving a NID64 only tells you *which record the entry
+is about* - the referenced record is where any usable content lives. A database built
+before record ids were stored can still be browsed, but its NID64 cards report that
+resolution is unavailable until it is rebuilt with `--convert`.
+
 ## What `kind` means
 
 `kind` is an undocumented namespace/table id. Observed values in the current database:

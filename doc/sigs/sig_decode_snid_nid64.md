@@ -285,6 +285,13 @@ exists (for example the GoLang allow-list keys have a coincidental `0xea`
   `BM_ENV_VAR_MAP`, `ARHSTR_POSIX_EXT`; ARM64 corrections).
 * `defender2yara/defender/dbthreat.py` — `snid_signatures`; NID64 is populated
   into `nid_signatures` alongside NID.
+* `defender2yara/defender/dbthreat.py` — every signature also stores `record_id`
+  (`crc32(payload) | type << 32 | size << 40`) in a deferred, indexed column.
+* `defender2yara/threat_api.py` — `RecordIdResolver` resolves NID64 keys against
+  that column for the HTML page, REST API and MCP; old databases without the
+  column report resolution as unavailable instead of failing.
+* `app/templates/signatures/nid64.html` — the NID64 card links to the referenced
+  record and its owning threat.
 * `app/views.py` and `app/templates/threat.html` — the decoded-record set keeps
   SNID records out of the raw dump, and the threat page has `nid`/`snid`
   sections.

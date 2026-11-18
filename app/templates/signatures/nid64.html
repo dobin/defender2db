@@ -6,6 +6,25 @@
   <dt>Purpose</dt><dd>{{ d.get('purpose_label', '') }}</dd>
   <dt>Definition group</dt><dd>{{ d.get('record_name', '') }}</dd>
   {% if d.get('has_record_id_layout') %}
+  {% set ref = d.get('referenced_record', {}) %}
   <dt>Packed record ID</dt><dd>Type {{ d.get('packed_sig_type', '') }} · Size {{ d.get('packed_size', '') }} · CRC32 {{ d.get('packed_crc32')|hexnum(8) }}</dd>
+  <dt>Referenced record</dt>
+  <dd>
+    {% if ref.get('status') == 'resolved' %}
+      {% if ref.get('role') == 'signature' and ref.get('threat_id') %}
+      <a href="{{ url_for('views.get_threat', local_id=ref.get('threat_id')) }}#signature-{{ ref.get('signature_id') }}">{{ ref.get('type', '') }} · local ID {{ ref.get('signature_id') }}</a>
+      {% if ref.get('threat_name') %} in <span class="referenced-threat">{{ ref.get('threat_name') }}</span>{% endif %}
+      {% else %}
+      {{ ref.get('type', '') }} · local ID {{ ref.get('signature_id') }} (no owning threat card)
+      {% endif %}
+    {% elif ref.get('status') == 'not_shipped' %}
+      No record with this id is shipped in this database. It may be a runtime or cloud record.
+    {% elif ref.get('status') == 'unavailable' %}
+      Record resolution is unavailable: this database was built before record ids were stored.
+      Rebuild with <code>--convert</code> to resolve references.
+    {% endif %}
+  </dd>
+  {% else %}
+  <dt>Referenced record</dt><dd>The key is not a packed record id, so there is no record to resolve.</dd>
   {% endif %}
 </dl>

@@ -114,6 +114,56 @@ class PersistenceTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, '--include-raw'):
                 mcp_server.get_raw_signature(1)
 
+    def test_nid64_resolves_packed_record_id_to_shipped_record(self):
+        from defender2yara.defender.signature.record_id import packed_record_id
+
+        target = b"\x02\x00\x02\x00payload"
+        key = packed_record_id(target, 0x78)
+        self.publish(sources=[synthetic_vdm(threat_records([
+            tlv(0x78, target),
+            tlv(0xCE, key.to_bytes(8, "little") + b"\x67"),
+        ]))])
+
+        details = get_threat_details(1, self.path)
+        target_row, reference = details["signatures"]
+        self.assertEqual(reference["type_id"], 0xCE)
+        self.assertEqual(reference["details"]["referenced_record"], {
+            "status": "resolved",
+            "signature_id": target_row["id"],
+            "threat_id": 1,
+            "threat_name": NAME,
+            "role": "signature",
+            "type_id": 0x78,
+            "type": "SIGNATURE_TYPE_PEHSTR_EXT",
+            "payload_size": len(target),
+        })
+        self.assertEqual(get_signature_details(reference["id"], self.path)["details"],
+                         reference["details"])
+
+        missing = packed_record_id(b"not shipped", 0x78)
+        self.publish(path=self.path.with_name("missing.sqlite"), sources=[synthetic_vdm(threat_records([
+            tlv(0xCE, missing.to_bytes(8, "little") + b"\x67"),
+        ]))])
+        unresolved = get_threat_details(1, self.path.with_name("missing.sqlite"))["signatures"][0]
+        self.assertEqual(unresolved["details"]["referenced_record"], {"status": "not_shipped"})
+
+    def test_database_without_record_ids_still_reads(self):
+        from defender2yara.defender.signature.record_id import packed_record_id
+
+        key = packed_record_id(b"target", 0x78)
+        self.publish(sources=[synthetic_vdm(threat_records([
+            tlv(0xCE, key.to_bytes(8, "little") + b"\x67"),
+        ]))])
+        engine = database_engine(self.path)
+        try:
+            with engine.begin() as connection:
+                connection.exec_driver_sql('DROP INDEX ix_signature_record_id')
+                connection.exec_driver_sql('ALTER TABLE signature DROP COLUMN record_id')
+        finally:
+            engine.dispose()
+        details = get_threat_details(1, self.path)["signatures"][0]["details"]
+        self.assertEqual(details["referenced_record"], {"status": "unavailable"})
+
     def test_raw_capture_includes_every_exact_tlv_and_framing(self):
         records = sample_records()
         vdm = synthetic_vdm(records)
@@ -290,6 +340,7 @@ class PersistenceTests(unittest.TestCase):
         with read_session(self.path) as session:
             indexes = session.execute(text('PRAGMA index_list(signature)')).all()
             self.assertIn('signature_threat_order', [row[1] for row in indexes])
+            self.assertIn('ix_signature_record_id', [row[1] for row in indexes])
             encoded = session.scalar(text('SELECT details FROM signature WHERE type_id=190 AND decode_status="decoded"'))
             self.assertNotIn('\": ', encoded)
             self.assertEqual(json.loads(encoded)['subrules'][0]['rule_bytes_hex'], '58353535')

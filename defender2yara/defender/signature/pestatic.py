@@ -1,7 +1,7 @@
 import struct
-import zlib
 
 from .base import BaseSig
+from .record_id import defender_crc32, packed_record_id  # noqa: F401 (re-exported)
 from defender2yara.defender.constant import SIG_TYPES
 
 
@@ -21,28 +21,10 @@ SECTION_PREFIX_SIZE = 0x200
 # look like flag bits in the top two bits rather than a real window length.
 IMPLAUSIBLE_WINDOW_LIMIT = 0x40000000
 
-# Record ids are ``crc32(payload) | sig_type << 32 | payload_size << 40``
-# (see ``FUN_180b5589c`` / ``FUN_180b558fc``).
-RECORD_ID_SIG_TYPE_SHIFT = 32
-RECORD_ID_SIZE_SHIFT = 40
-
 PESTATIC_SIGS = [
     "SIGNATURE_TYPE_PESTATIC",
     "SIGNATURE_TYPE_PESTATICEX",
 ]
-
-
-def defender_crc32(data: bytes) -> int:
-    """CRC-32 as used by mpengine: reflected, init 0xffffffff, no final xor."""
-    return zlib.crc32(data) & 0xFFFFFFFF ^ 0xFFFFFFFF
-
-
-def _packed_record_id(payload: bytes, sig_type_id: int) -> int:
-    return (
-        defender_crc32(payload)
-        | sig_type_id << RECORD_ID_SIG_TYPE_SHIFT
-        | len(payload) << RECORD_ID_SIZE_SHIFT
-    )
 
 
 class PestaticSig(BaseSig):
@@ -157,7 +139,7 @@ class PestaticSig(BaseSig):
                 self.decode_warnings.append("Truncated PESTATIC record name")
 
         self.base_size = base_size
-        self.packed_record_id = _packed_record_id(
+        self.packed_record_id = packed_record_id(
             self.sig_data[:base_size], self.sig_type_id
         )
 

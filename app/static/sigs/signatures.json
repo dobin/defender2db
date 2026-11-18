@@ -37,7 +37,7 @@
     "detail": "SIG_NID.md"
   },
   "NID64": {
-    "description": "A NID64 is a 64-bit reference into Defender's internal id table, not a detector.",
+    "description": "A NID64 is a 64-bit reference into Defender's internal id table, not a detector. Packed record-id keys are resolved to the record they point at.",
     "detail": "SIG_NID64.md"
   },
   "SNID": {

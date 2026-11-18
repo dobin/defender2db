@@ -17,12 +17,13 @@ def _insert_records(connection, signature_rows, raw_rows):
     # on the multi-million-record hot path, within the same managed transaction.
     connection.exec_driver_sql(
         'INSERT INTO signature (id,source_id,threat_id,offset,role,type_id,payload_size,'
-        'header_size,record_size,decode_status,details_version,details) '
-        'VALUES (?,?,?,?,?,?,?,?,?,?,?,?)', signature_rows)
+        'record_id,header_size,record_size,decode_status,details_version,details) '
+        'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)', signature_rows)
     if raw_rows:
         connection.exec_driver_sql('INSERT INTO raw_record (signature_id,data) VALUES (?,?)', raw_rows)
 
 from defender2yara.defender.dbthreat import DbThreat, Signature, Source
+from defender2yara.defender.signature.record_id import packed_record_id
 
 
 def store_source(connection, vdm, *, include_raw, generate):
@@ -79,7 +80,8 @@ def store_source(connection, vdm, *, include_raw, generate):
             details = {'error': error}
         signature_rows.append((
             signature_id, source_id, owner, sig.offset, role, sig.sig_type_id,
-            sig.size, sig.header_size, sig.record_size,
+            sig.size, packed_record_id(sig.sig_data, sig.sig_type_id),
+            sig.header_size, sig.record_size,
             'error' if error is not None else sig.decode_status,
             sig.details_version, _JSON_ENCODER.encode(details),
         ))

@@ -104,7 +104,7 @@ class YaraViewTests(unittest.TestCase):
         app.register_blueprint(views)
         return app.test_client()
 
-    def add_signature(self, *, raw=False):
+    def add_signature(self, *, raw=False, record_id=None):
         from defender2yara.defender.dbthreat import RawRecord, Signature
 
         engine = database_engine(self.database)
@@ -112,7 +112,8 @@ class YaraViewTests(unittest.TestCase):
             with engine.begin() as connection:
                 connection.execute(insert(Signature), dict(
                     id=34, source_id=1, threat_id=2, offset=100, role='signature',
-                    type_id=0x67, payload_size=4, header_size=4, record_size=8,
+                    type_id=0x67, payload_size=4, record_id=record_id,
+                    header_size=4, record_size=8,
                     decode_status='partial', details_version=1,
                     details={'record_name': '<script>alert(1)</script>', 'file_size': 123,
                              'flags': 1, 'hash_type': 'md5', 'file_hash_hex': 'abcd',
@@ -124,6 +125,35 @@ class YaraViewTests(unittest.TestCase):
                     connection.execute(insert(RawRecord), dict(signature_id=34, data=b'\x00\x01raw'))
         finally:
             engine.dispose()
+
+    def test_web_nid64_links_to_referenced_record(self):
+        from defender2yara.defender.dbthreat import Signature
+        from defender2yara.defender.signature.record_id import packed_record_id
+
+        key = packed_record_id(b'abcd', 0x67)
+        self.add_signature(record_id=key)
+        engine = database_engine(self.database)
+        try:
+            with engine.begin() as connection:
+                connection.execute(insert(Signature), dict(
+                    id=35, source_id=1, threat_id=2, offset=101, role='signature',
+                    type_id=0xCE, payload_size=9, header_size=4, record_size=13,
+                    decode_status='decoded', details_version=1,
+                    details={
+                        'record_key_hex': f'{key:016x}', 'record_kind': 0x67,
+                        'record_name': '', 'has_record_id_layout': True,
+                        'packed_crc32': key & 0xFFFFFFFF, 'packed_sig_type_id': 0x67,
+                        'packed_sig_type': 'SIGNATURE_TYPE_STATIC', 'packed_size': 4,
+                        'kind_label': 'STATIC table members', 'purpose_label': 'naming',
+                        'description': 'key=0x%s kind=0x67' % f'{key:016x}',
+                    },
+                ))
+        finally:
+            engine.dispose()
+        page = self.web_client().get('/threat/2')
+        self.assertIn(b'href="/threat/2#signature-34"', page.data)
+        self.assertIn(b'local ID 34', page.data)
+        self.assertNotIn(b'not a packed record id', page.data)
 
     def test_web_local_ids_json_sections_and_escaping(self):
         self.add_signature()

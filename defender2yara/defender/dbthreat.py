@@ -71,6 +71,10 @@ class Signature(Base):
     role: Mapped[str]
     type_id: Mapped[int]
     payload_size: Mapped[int]
+    # Engine record id: ``crc32(payload) | type << 32 | size << 40``.  NID64
+    # keys use this layout, so the column lets a reference resolve to the record
+    # it points at.  Deferred keeps databases built before the column readable.
+    record_id: Mapped[int | None] = mapped_column(index=True, deferred=True)
     header_size: Mapped[int]
     record_size: Mapped[int]
     decode_status: Mapped[str]

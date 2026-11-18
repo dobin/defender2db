@@ -92,8 +92,10 @@ Threats contain explicit identity/name/category/severity fields, suffixes and
 failed generation remain distinct. Readers never rerun parsers or generators.
 
 Every scanned record has a local ID, source ID/offset, role, type ID, sizes,
-`decode_status` (`decoded`, `partial`, `unsupported`, `error`), `details_version`,
-and an explicit JSON `details` object. Meaningful binary fields use lowercase
+`decode_status` (`decoded`, `partial`, `unsupported`, `error`),
+`details_version`, and an explicit JSON `details` object. It also stores the
+engine record id (`crc32(payload) | type << 32 | size << 40`) so references can
+be resolved. Meaningful binary fields use lowercase
 `*_hex` strings; 64-bit keys/packed IDs use fixed-width hex strings rather than
 precision-losing JSON numbers. Unknown fields remain visible in the generic JSON
 view. Unsupported records have no decoded payload; raw omission does not imply
@@ -104,9 +106,17 @@ aggregator expressions/references, environment gates, behavior-tree
 edges/conditions and NID/SNID references. It also shows decode/generation statuses,
 source offsets, original record order, generic JSON and lazy raw downloads.
 Version gates affect subsequent source-order records, even when displayed in
-separate groups. Reference resolution is not attempted: opaque SNID keys are not
-payload hashes, names can describe groups, and targets may be external or
-ambiguous.
+separate groups.
+
+NID64 references are resolved when the key has the engine's packed record-id
+layout (`crc32(payload) | type << 32 | size << 40`). Conversion stores that id on
+every signature, so a NID64 card links to the referenced record and its owning
+threat. This is a pointer, not a detection rule. Keys that are plain hashes or
+point at runtime/cloud records show no target. SNID keys are not payload hashes
+and stay unresolved, and group names describe lists, not the referenced record.
+
+Databases built before record ids were stored remain readable; their NID64 cards
+say that resolution is unavailable until rebuilt with `--convert`.
 
 Names and Defender IDs are **not unique**. Local threat/signature IDs identify
 occurrences only within the current snapshot. Offsets identify records within
