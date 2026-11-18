@@ -20,6 +20,8 @@ SIGNATURE_TEMPLATES = {
     'PEHSTR': 'signatures/pehstr.html',
     'PEHSTR_EXT': 'signatures/pehstr_ext.html',
     'DEXHSTR_EXT': 'signatures/dexhstr_ext.html',
+    'CMDHSTR_EXT': 'signatures/cmdhstr_ext.html',
+    'CMDHSTR_FAST_EXT': 'signatures/cmdhstr_ext.html',
     'AAGGREGATOR': 'signatures/aaggregator.html',
     'AAGGREGATOREX': 'signatures/aaggregatorex.html',
     'VERSIONCHECK': 'signatures/versioncheck.html',

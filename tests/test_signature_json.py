@@ -100,11 +100,13 @@ class SignatureJsonTests(unittest.TestCase):
         self.assertEqual(d["end_marker"], 0)
         self.assertEqual(d["subrules"][0]["unknown_u8_1"], 0)
         self.assertEqual(d["subrules"][0]["rule_bytes_hex"], "616263")
-        reference = struct.pack("<HHH", 2, 2, 0) + b"!#Tel:Example\0\0\0"
+        reference = struct.pack("<HHH", 1, 1, 1) + b"!#Tel:Example\0"
+        reference += struct.pack("<hBB", 1, 3, 1) + b"abc" + b"\0\0"
         dex = self.snapshot(DexHStrExtSig(tlv(0xBE, reference)))
         self.assertTrue(dex["is_name_reference"])
         self.assertEqual(dex["name_reference"], "#Tel:Example")
-        self.assertEqual(dex["subrules"], [])
+        self.assertEqual(len(dex["subrules"]), 1)
+        self.assertEqual(dex["patterns"], ["abc"])
 
     def test_pehstr_ext_bytes_are_not_rendered_as_text(self):
         pattern = b"\xe8\x00\x00\x00\x00\x5b\x52\x45\x55\x90\x01\x04"

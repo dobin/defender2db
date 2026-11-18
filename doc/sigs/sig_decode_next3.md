@@ -265,10 +265,13 @@ The plain parser already produced good YARA strings for all 3,053 records
    `... 00 00 03 00`. Exposed as `DexHStrExtSig.flags` /
    `.flags_present`. The exact bit meanings are not confirmed.
 2. **Name-reference form.** 287 `0xbe` records inside the
-   `!InfrastructureShared` bucket are not string patterns at all: the reserved
-   header byte (offset 6) is `0x21` (`!`) instead of `0`, and the payload is a
-   plain text reference such as `#Tel:Trojan:AndroidOS/Fakecalls.YU`. Those are
-   detected as `is_name_reference` and left unparsed.
+   `!InfrastructureShared` bucket use the name field: byte 6 starts a
+   NUL-terminated reference such as `!#Tel:Trojan:AndroidOS/Fakecalls.YU`.
+   These are *not* pattern-less records: the sub-rules follow the NUL and are
+   real DEX string patterns (e.g. `|*callEntity*|`,
+   `com/limitemp/interstellar/app/`).  They are exposed as
+   `name_reference` / `is_name_reference`, and the patterns are kept.  See
+   `doc/sigs/sig_decode_cmdhstr_dexhstr.md` for the corrected model.
 
 ---
 

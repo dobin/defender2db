@@ -151,6 +151,8 @@ class Vdm:
             entry = HStrSig(data,ptr)
         elif sig_type == "SIGNATURE_TYPE_DEXHSTR_EXT":
             entry = DexHStrExtSig(data,ptr)
+        elif sig_type in ("SIGNATURE_TYPE_CMDHSTR_EXT", "SIGNATURE_TYPE_CMDHSTR_FAST_EXT"):
+            entry = CmdHStrExtSig(data,ptr)
         elif sig_type in HSTR_EXT_SIGS:
             entry = HStrExtSig(data,ptr)
         elif sig_type == "SIGNATURE_TYPE_LUASTANDALONE":

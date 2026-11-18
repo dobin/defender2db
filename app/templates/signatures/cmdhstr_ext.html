@@ -1,0 +1,5 @@
+{% set d = sig.details %}
+<p>Command-line signature &#183; Threshold {{ d.get('threshold', '') }} &#183; Target {{ d.get('scan_target', 'command_line') }} &#183; Variant {{ d.get('variant', 'normal') }}</p>
+{% if d.get('name_present') %}<p>Label: <code>{{ d.get('name', '') }}</code></p>{% endif %}
+<table class="table table-sm table-bordered"><thead><tr><th>Weight</th><th>Flags</th><th>Case</th><th>Wildcards</th><th>Command-line pattern (hex)</th><th>Text (best effort)</th></tr></thead><tbody>{% for rule in d.get('subrules', []) %}<tr><td>{{ rule.get('rule_weight', '') }}</td><td>{{ rule.get('flags', rule.get('unknown_u8_1'))|hexnum }}</td><td>{{ 'sensitive' if rule.get('case_sensitive') else 'insensitive' }}</td><td>{{ 'yes' if rule.get('wildcard') else 'no' }}</td><td><code>{{ rule.get('rule_bytes_hex', '') }}</code></td><td><code>{{ rule.get('text', rule.get('rule_bytes_hex', '')|hextext) }}</code></td></tr>{% endfor %}</tbody></table>
+<p class="text-muted">This record is matched against process command lines (including task-scheduler and BITS command lines), not against file bytes.</p>

@@ -11,7 +11,16 @@
     "description": "An extended PE string signature matches weighted patterns with extended PE-specific metadata."
   },
   "DEXHSTR_EXT": {
-    "description": "A DEX string signature matches weighted patterns in Android Dalvik executable strings."
+    "description": "A DEX string signature matches weighted patterns in Android Dalvik executable strings.",
+    "detail": "SIG_DEXHSTR.md"
+  },
+  "CMDHSTR_EXT": {
+    "description": "A command-line string signature matches weighted patterns against a process command line, not against file bytes.",
+    "detail": "SIG_CMDHSTR.md"
+  },
+  "CMDHSTR_FAST_EXT": {
+    "description": "The fast-path variant of a command-line string signature; same record layout and patterns.",
+    "detail": "SIG_CMDHSTR.md"
   },
   "AAGGREGATOR": {
     "description": "A legacy aggregator stores the same boolean expression as AAGGREGATOREX, but as plain text instead of an obfuscated body. It combines references to other Defender signatures and is not a file pattern.",

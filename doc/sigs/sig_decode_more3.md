@@ -220,18 +220,25 @@ found by checking all 100,643 `0x78` records (and all other `*HSTR_EXT` types,
 ~145k records):
 
 ```
-u16  unknown
+u16  unknown            total positive weight in most records
 u16  threshold          minimum total sub-rule weight
 u16  rule_numbers       number of sub-rules
 u8   name[]             NUL-terminated name/reference (empty in compiled records)
 sub-rule[rule_numbers]:
     i16  weight
     u8   size
-    u8   flags          (0x80/0x81/0x88/0x90 add one extra length byte)
+    u8   flags          bit 0 case-sensitive, bit 1 wildcard, bit 7 extended
+    u8   extra          only when flags & 0x80
     u8   bytes[size]
-u16  end_marker         normally 0x0000
-u16  flags              optional (~4% of records)
+u16  tail_word1         optional (engine record+0x10)
+u16  tail_word2         optional (engine record+0x0c)
 ```
+
+> **Update (tenth round):** the flag byte is now fully decoded from
+> `FUN_180183298`: `0x01` = case-sensitive, `0x02` = wildcard pattern,
+> `0x80` = one extra byte before the pattern.  The old special-casing of
+> `0x88`/`0x90` was wrong.  See
+> `doc/sigs/sig_decode_cmdhstr_dexhstr.md` and `cache/functions_vdm.md` §18.
 
 1. **Byte 6 is not a reserved byte.**  It is the first byte of a
    NUL-terminated name.  Compiled records store just `0x00` there, which is why
@@ -252,14 +259,14 @@ u16  flags              optional (~4% of records)
    and a 4-byte tail).  Using the count makes every `*HSTR_EXT` record consume
    its payload exactly.
 
-3. **Trailing word.**  Normally `u16 0` followed by an optional `u16` flags
-   word (values 1..46, combinations of the low six bits).  Some record kinds
-   (`CMDHSTR_EXT`, `ARHSTR_EXT`, a few `PEHSTR_EXT`) store the flags directly in
-   the first word.  `HStrExtSig` exposes `tail`, `end_marker`, `flags` and
-   `flags_present`.
+3. **Trailing words.**  Up to two `u16` option words follow the sub-rule list;
+   there is no explicit terminator between the last sub-rule and the tails.
+   `HStrExtSig` exposes `tail`, `end_marker` (first word), `flags` (second
+   word) and `flags_present`.
 
 The DEX flavour (`DexHStrExtSig`) keeps its old convenience attributes
-(`is_name_reference`, `name_reference`) while sharing the new parser.
+(`is_name_reference`, `name_reference`) while sharing the new parser; the
+sub-rules after a named record are now kept instead of discarded.
 
 ---
 

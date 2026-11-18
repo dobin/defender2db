@@ -3,7 +3,10 @@ from defender2yara.defender.signature.hstr import (
     HStrSig,
     HStrExtSig,
     DexHStrExtSig,
+    CmdHStrExtSig,
     HSTR_EXT_SIGS,
+    TEXTUAL_HSTR_SIGS,
+    decode_hstr_pattern,
 )
 from defender2yara.defender.signature.threat import ThreatBeginSig, ThreatEndSig
 from defender2yara.defender.signature.lua import LuaSig

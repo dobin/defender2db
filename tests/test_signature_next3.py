@@ -110,13 +110,16 @@ class DexHStrExtTests(unittest.TestCase):
         self.assertEqual(sig.subrules[-1].rule_bytes, b"fillSmsInfo()")
 
     def test_name_reference_variant(self):
-        # !InfrastructureShared record: not a real DEX string signature
+        # !InfrastructureShared record: the name is a list label but the
+        # sub-rule that follows it is still a real DEX string pattern.
         sig = DexHStrExtSig(tlv(0xBE, bytes.fromhex(
             "020002000100212354656c3a54726f6a616e3a416e64726f69644f532f46616b65"
             "63616c6c732e59550002000e007c2a63616c6c456e746974792a7c0000")))
         self.assertTrue(sig.is_name_reference)
         self.assertEqual(sig.name_reference, "#Tel:Trojan:AndroidOS/Fakecalls.YU")
-        self.assertEqual(sig.subrules, [])
+        self.assertEqual(len(sig.subrules), 1)
+        self.assertEqual(sig.subrules[0].rule_bytes, b"|*callEntity*|")
+        self.assertEqual(sig.patterns, ["|*callEntity*|"])
 
 
 class VersionCheckTests(unittest.TestCase):

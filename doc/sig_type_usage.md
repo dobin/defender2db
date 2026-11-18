@@ -36,8 +36,8 @@ Counts are actual signature records, unpacked from every `threatObject` blob (no
 | 22 | `SIGNATURE_TYPE_KVIR32` | `0x20` | 5,369 | 0.08% | 2,704 | raw only / unimplemented |
 | 23 | `SIGNATURE_TYPE_BM_INFO` | `0xA8` | 4,192 | 0.06% | 1,716 | parsed (id spec + telemetry tags) |
 | 24 | `SIGNATURE_TYPE_REGKEY` | `0x63` | 3,911 | 0.06% | 542 | raw only / unimplemented |
-| 25 | `SIGNATURE_TYPE_CMDHSTR_EXT` | `0xD7` | 2,941 | 0.04% | 2,737 | parsed (YARA) |
-| 26 | `SIGNATURE_TYPE_DEXHSTR_EXT` | `0xBE` | 2,766 | 0.04% | 2,653 | parsed (YARA, DEX flags) |
+| 25 | `SIGNATURE_TYPE_CMDHSTR_EXT` | `0xD7` | 2,941 | 0.04% | 2,737 | parsed (command-line strings + flags/wildcards) |
+| 26 | `SIGNATURE_TYPE_DEXHSTR_EXT` | `0xBE` | 2,766 | 0.04% | 2,653 | parsed (DEX strings + flags/wildcards) |
 | 27 | `SIGNATURE_TYPE_FILEPATH` | `0x5F` | 2,479 | 0.04% | 515 | parsed (CSIDL root + path/glob) |
 | 28 | `SIGNATURE_TYPE_MACRO_PCODE` | `0x42` | 2,432 | 0.04% | 2,116 | parsed (3 32-bit p-code keys) |
 | 29 | `SIGNATURE_TYPE_SIGTREE_EXT` | `0x41` | 2,205 | 0.03% | 1,712 | parsed (tree + attribute ids) |
@@ -191,7 +191,8 @@ Three more types now have structural decoders (full notes in
   `definition_set_digest[0] == 0x02da09d4`, always-true, ...).
 - `SIGNATURE_TYPE_DEXHSTR_EXT` (`0xbe`): identical to the other `*HSTR_EXT` patterns
   (already parsed into YARA), plus an optional trailing flags word present in ~14% of
-  records and a text-reference variant used by `!InfrastructureShared`.
+  records.  The full flag/encoding model and the named-record (still patterned)
+  form are covered in the tenth round below.
 
 Wired into `Vdm.parse_database` and covered by `tests/test_signature_next3.py`.
 All 61,055 / 84,634 / 3,053 records of these types in `threats.db` parse cleanly.
@@ -658,6 +659,80 @@ Decoders: `defender2yara/defender/signature/macro_pcode.py` (`MacroPcodeSig`)
 and the rewritten `defender2yara/defender/signature/lua.py` (`LuaSig`, plus
 `parse_lua_chunk`, `phase_name` and `split_attributes`).  Wired into
 `Vdm.decode_record`; tests in `tests/test_signature_macro_pcode_lua.py`.
+
+## Tenth round: command-line HSTR and DEX HSTR
+
+Full write-up: `doc/sigs/sig_decode_cmdhstr_dexhstr.md`.  Engine notes were
+added to `cache/functions_vdm.md` §18.  User-facing pages:
+`app/static/sigs/SIG_CMDHSTR.md` and `app/static/sigs/SIG_DEXHSTR.md`.
+
+Both types are members of the engine's shared **HSTR** family
+(`FUN_180a1f948`, type table `0x180c8b800`, generic parser `FUN_180182d14`,
+pattern compiler `FUN_180183298`, matcher `FUN_180249264`).  They use the same
+container and weighted sub-rules as `PEHSTR_EXT`; only the scan target and the
+sub-rule flag combination differ.
+
+### `SIGNATURE_TYPE_CMDHSTR_EXT` (`0xd7`)
+
+Kind 11 in the HSTR type table: a **command-line content signature**.  It is
+matched against process command lines by the `cmdlinescan` module
+(`FUN_180afde40`, main scan `FUN_180554374`, callback `FUN_180afce70`), not
+against file bytes.  The engine callers are `HSTR_CALLER_CMDLINE`,
+`HSTR_CALLER_TSKSCHED_CMDLINE` and `HSTR_CALLER_BITS_CMDLINE`; `#ClnCmdLine`
+is the clean-verdict tag.
+
+* 5,415 records in `cache/threats.db`: 2,941 real-threat records (2,737
+  threats) and 2,474 `!InfrastructureShared` copies; 30,142 sub-rules.
+* Patterns are 92% UTF-16LE and 8% ASCII.  4,074 sub-rules use HSTR
+  wildcards (`90 01`/`90 02`/`90 03`); 399 are case-sensitive; 1,661 use the
+  extended header (`flag 0x80`, `extra == 1`); 2,859 have negative weights
+  (exclusion/penalty conditions).
+* Real-threat records are anonymous.  Shared copies are labelled
+  `!#SLF:` (2,060), `!#TEL:` (324), `!#ALF:` (43), `!#HSTR:` (11), `!#CMD:`
+  (11), `!#SLFPER:` (11), `!#TELPER:` (8), plus a few one-offs.
+* Example (`Trojan:Win32/Kovter.G`):
+  `mshta<skip 0..16>javascript:<skip 0..255>new activexobject(`.
+  The dominant families are ClickFix/SuspClickFix, PowerShell downloaders and
+  `mshta` launchers.
+* The optional tail word is zero in 5,394 records (21 use 1/2/5/6/10) and no
+  record has a second tail word.
+
+`SIGNATURE_TYPE_CMDHSTR_FAST_EXT` (`0xdd`, kind 16) is the same layout on the
+fast/low-fi command-line path; only two records exist (both
+`Trojan:Linux/FchsE2ETest*` test strings) and they now decode as well.
+
+### `SIGNATURE_TYPE_DEXHSTR_EXT` (`0xbe`)
+
+Kind 5: the Android/Dalvik **DEX string-table** member.  Patterns are UTF-8
+string fragments (with uleb128-length skips and byte classes), mostly
+case-sensitive.  The earlier 287 "name reference" records in
+`!InfrastructureShared` are not pattern-less: the sub-rules follow the label
+and are now kept and rendered.
+
+* 3,053 records: 2,766 real (2,653 threats) and 287 shared; 16,409 sub-rules.
+* 10,402 case-sensitive sub-rules, 526 with wildcards, 117 extended-header
+  sub-rules, 424 records with the second tail word ("DEX flags", values 1..46).
+* Example (`TrojanSpy:AndroidOS/Geimini.A`):
+  `hi,xiaolu<skip 2>hi,liqian<skip 2>command ok<skip 2>bye` and
+  `AdActivity<op 09 0c00>com<any-of {2e} x1>/geinimi`.
+
+### Shared sub-rule flags (corrected)
+
+The engine reads the sub-rule byte after the size as a flag byte
+(`FUN_180183298`): bit `0x01` = case-sensitive, bit `0x02` = wildcard pattern
+(must end in `90 00`, case folding is wildcard-aware), bit `0x80` = one
+`extra` byte precedes the pattern; `extra` bit 0 makes the engine register an
+additional terminator-less variant (internal flag `0x400`).  The old parser
+special-cased `0x88`/`0x90` and shifted the pattern by one byte; that is fixed
+in `HStrExtSubRule`, which now also exposes `case_sensitive`, `wildcard`,
+`extended`, `extra`, `variant` and `entry_size`.
+
+`CMDHSTR_EXT`/`CMDHSTR_FAST_EXT` are now decoded by `CmdHStrExtSig`,
+`DEXHSTR_EXT` by `DexHStrExtSig` (both in
+`defender2yara/defender/signature/hstr.py`), and `decode_hstr_pattern()`
+renders UTF-16LE/ASCII literal runs plus the wildcard tokens.  Tests:
+`tests/test_signature_cmdhstr.py`; existing DEX tests were updated because
+named records keep their sub-rules.
 
 ## Aggregate pseudo-threat records
 
