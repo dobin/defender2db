@@ -242,24 +242,38 @@ class SignatureJsonTests(unittest.TestCase):
     def test_lua_standalone_wrapper_is_decoded(self):
         name = b"!#Lua:Test\0"
         attributes = b"Includes\0BMLuaLib\0"
-        body = b"\x1bLuaQ\x00\x01\x04\x08\x04\x08\x01" + b"\0" * 32
+        code = struct.pack("<II", 1, 30 | (2 << 23))  # LOADK R0 K0; RETURN R0, 2
+        function = (struct.pack("<III", 0, 0, 0) + bytes([0, 0, 0, 2])
+                    + struct.pack("<I", 2) + code
+                    + struct.pack("<I", 1) + b"\x04"
+                    + struct.pack("<I", len("BMLuaLib") + 1) + b"BMLuaLib\0"
+                    + struct.pack("<IIII", 0, 0, 0, 0))
+        body = b"\x1bLuaQ\x00\x01\x04\x08\x04\x08\x01" + function
         payload = bytes([len(name), 0x15]) + struct.pack("<HI", len(attributes), len(body))
         payload += name + attributes + body
         sig = LuaSig(tlv(0xBD, payload))
         self.assertEqual(sig.lua_bytecode, body)
         d = self.snapshot(sig)
-        self.assertEqual(d, {
-            "record_name": "!#Lua:Test",
-            "has_name": True,
-            "script_type": 0x15,
-            "attributes": ["Includes", "BMLuaLib"],
-            "attribute_data_hex": None,
-            "body_size": len(body),
-            "body_format": "lua",
-            "has_lua_bytecode": True,
-            "decode_warnings": [],
-            "summary": sig.describe(),
-        })
+        self.assertEqual(d["record_name"], "!#Lua:Test")
+        self.assertTrue(d["has_name"])
+        self.assertEqual(d["script_type"], 0x15)
+        self.assertEqual(d["phase_name"], "SignatureValidator")
+        self.assertEqual(d["attributes"], [
+            {"name": "Includes", "value": "BMLuaLib", "obfuscated": False},
+        ])
+        self.assertEqual(d["attribute_strings"], ["Includes", "BMLuaLib"])
+        self.assertIsNone(d["attribute_data_hex"])
+        self.assertEqual(d["body_size"], len(body))
+        self.assertEqual(d["body_format"], "lua")
+        self.assertTrue(d["has_lua_bytecode"])
+        self.assertEqual(d["decode_warnings"], [])
+        self.assertEqual(d["summary"], sig.describe())
+        chunk = d["chunk"]
+        self.assertTrue(chunk["has_header"])
+        self.assertEqual((chunk["version"], chunk["functions"], chunk["instructions"]), ("5.1", 1, 2))
+        self.assertEqual(chunk["string_constants"], ["BMLuaLib"])
+        self.assertEqual(chunk["number_encoding"], "integer")
+        self.assertEqual(chunk["opcodes"][0], {"name": "LOADK", "count": 1})
 
 
 if __name__ == "__main__":

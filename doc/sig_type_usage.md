@@ -31,7 +31,7 @@ Counts are actual signature records, unpacked from every `threatObject` blob (no
 | 17 | `SIGNATURE_TYPE_PEHSTR` | `0x61` | 6,906 | 0.10% | 6,355 | parsed (YARA) |
 | 18 | `SIGNATURE_TYPE_AAGGREGATOR` | `0x96` | 6,646 | 0.10% | 3,858 | parsed (plaintext expression) |
 | 19 | `SIGNATURE_TYPE_FOLDERNAME` | `0x60` | 6,055 | 0.09% | 2,020 | parsed (CSIDL root + path/glob) |
-| 20 | `SIGNATURE_TYPE_MACRO_PCODE64` | `0xCF` | 5,925 | 0.09% | 1,128 | raw only / unimplemented |
+| 20 | `SIGNATURE_TYPE_MACRO_PCODE64` | `0xCF` | 5,925 | 0.09% | 1,128 | parsed (3 p-code routine keys) |
 | 21 | `SIGNATURE_TYPE_MACROHSTR_EXT` | `0x8F` | 5,693 | 0.08% | 4,047 | parsed (YARA) |
 | 22 | `SIGNATURE_TYPE_KVIR32` | `0x20` | 5,369 | 0.08% | 2,704 | raw only / unimplemented |
 | 23 | `SIGNATURE_TYPE_BM_INFO` | `0xA8` | 4,192 | 0.06% | 1,716 | parsed (id spec + telemetry tags) |
@@ -39,7 +39,7 @@ Counts are actual signature records, unpacked from every `threatObject` blob (no
 | 25 | `SIGNATURE_TYPE_CMDHSTR_EXT` | `0xD7` | 2,941 | 0.04% | 2,737 | parsed (YARA) |
 | 26 | `SIGNATURE_TYPE_DEXHSTR_EXT` | `0xBE` | 2,766 | 0.04% | 2,653 | parsed (YARA, DEX flags) |
 | 27 | `SIGNATURE_TYPE_FILEPATH` | `0x5F` | 2,479 | 0.04% | 515 | parsed (CSIDL root + path/glob) |
-| 28 | `SIGNATURE_TYPE_MACRO_PCODE` | `0x42` | 2,432 | 0.04% | 2,116 | raw only / unimplemented |
+| 28 | `SIGNATURE_TYPE_MACRO_PCODE` | `0x42` | 2,432 | 0.04% | 2,116 | parsed (3 32-bit p-code keys) |
 | 29 | `SIGNATURE_TYPE_SIGTREE_EXT` | `0x41` | 2,205 | 0.03% | 1,712 | parsed (tree + attribute ids) |
 | 30 | `SIGNATURE_TYPE_ELFHSTR_EXT` | `0x8C` | 1,944 | 0.03% | 1,905 | parsed (YARA) |
 | 31 | `SIGNATURE_TYPE_NID64` | `0xCE` | 1,919 | 0.03% | 1,522 | parsed (id/kind/name + packed record id) |
@@ -54,7 +54,7 @@ Counts are actual signature records, unpacked from every `threatObject` blob (no
 | 40 | `SIGNATURE_TYPE_FOP` | `0x7F` | 790 | 0.01% | 468 | raw only / unimplemented |
 | 41 | `SIGNATURE_TYPE_ARHSTR_EXT` | `0xC5` | 622 | 0.01% | 457 | parsed (YARA) |
 | 42 | `SIGNATURE_TYPE_AUTOITHSTR_EXT` | `0xD3` | 576 | 0.01% | 523 | parsed (YARA) |
-| 43 | `SIGNATURE_TYPE_LUASTANDALONE` | `0xBD` | 452 | 0.01% | 405 | parsed (Lua) |
+| 43 | `SIGNATURE_TYPE_LUASTANDALONE` | `0xBD` | 452 | 0.01% | 405 | parsed (wrapper + Lua chunk + phase) |
 | 44 | `SIGNATURE_TYPE_JAVAHSTR_EXT` | `0xBF` | 342 | 0.01% | 186 | parsed (YARA) |
 | 45 | `SIGNATURE_TYPE_HOSTSENTRY` | `0x64` | 204 | 0.00% | 2 | raw only / unimplemented |
 | 46 | `SIGNATURE_TYPE_KPAT` | `0xBB` | 183 | 0.00% | 178 | raw only / unimplemented |
@@ -586,6 +586,78 @@ Decoders: `AaAggregatorSig` in `defender2yara/defender/signature/aggregator.py`
 `Vdm.decode_record`; tests in `tests/test_signature_aggregator_paths.py`.
 None of the three feeds YARA: an aggregator references other rules, and a path
 record is not a file-byte pattern.
+
+## Ninth round: macro p-code fingerprints and standalone Lua scripts
+
+Full write-up: `doc/sigs/sig_decode_macro_pcode_lua.md`.  Engine notes were
+added to `cache/functions_vdm.md` §16 and §17.  User-facing pages:
+`app/static/sigs/SIG_MACRO_PCODE.md` and `app/static/sigs/SIG_LUA.md`.
+
+### `SIGNATURE_TYPE_MACRO_PCODE64` (`0xcf`) and `MACRO_PCODE` (`0x42`)
+
+These are **VBA p-code fingerprints**, not file hashes.  The `macro` module
+(`FUN_180a50370`) registers them next to `MACRO_SOURCE`; the parsers
+`FUN_180432b10` (`0xcf`) and `FUN_180432aa0` (`0x42`) read three routine keys
+and an optional NUL-terminated feed name (e.g.
+`!#ALF:Trojan:Win32/NeoHash.macropcode`).
+
+Each 64-bit key is `crc32 | crc16 << 32 | length << 48`: Defender CRC-32 (init
+`0xffffffff`, no final xor), reflected CRC-16/ARC (init 0) and the number of
+bytes hashed.  The 32-bit form keeps only the CRC-32, so its length/CRC-16
+fields are zero.  A slot of `0` (64-bit) or `0xffffffff` (32-bit) means "not
+used".
+
+At scan time `FUN_18024a84c` / `FUN_18024b1dc` walk the decompressed p-code of
+each VBA module for the three supported p-code dialects and keep a rolling hash
+of every opcode byte plus one of the "significant" opcode subset
+(`0x180c953c0`, opcode tables `0x180f0a1d8` / `0x180f0b198` / `0x180f0c1d8`).
+`FUN_18024d118` then queries the record table with those hash pairs;
+`FUN_18024d8a4` walks the table group with the same key1 and requires key0 to
+match (a record with an unset key1 matches on key0 alone, via the fallback
+index `DAT_1811069d0`).  The third key is stored and re-serialised but **not
+consulted by the matcher** in this build.
+
+Coverage: 5,978 `0xcf` records (5,925 real threats, 53 named shared) and 2,434
+`0x42` records (2,432 real, 2 named).  key0 lengths span 10..55,202 bytes and
+key1 lengths 0..17,767.  They are internal routine hashes, so no YARA output.
+
+### `SIGNATURE_TYPE_LUASTANDALONE` (`0xbd`)
+
+A **standalone MpLua script**: `u8 name_len, u8 phase, u16 attributes_len,
+u32 body_len`, then name, NUL-separated `name\0value\0` attribute pairs and a
+Lua 5.1 chunk.  66,760 records (66,606 with the normal 12-byte MpLua header,
+154 with the headerless `01 00 …` variant; 66,308 of them in
+`!InfrastructureShared`, all named, 452 real-threat records anonymous).
+
+Byte 1 is an index into the engine's 36-entry **phase table** at
+`0x180c6a650` (`FUN_180494924` resolves phase names to it): `Unknown`,
+`Infrastructure`, `Deprecated`×6, `PEPREEMU`, `PEPOSTEMU`, `PELast`,
+`PEFinalizer`, `GenFirst`, `GenLast`, `PreRemediation`, `PostRemediation`,
+`IETrigger`, `DetectionSpecific`, `ProcessInspector`, `UACTrigger`, `FFR`,
+`SignatureValidator` (63,291 records), `MacroSource`, `DynamicSignature`,
+`GenFinalizer`, `HipsRuleDefinition`, `RtpSkipRule`, `RtpSkipRuleEx`,
+`OnDetection`, `GenConsolidator`, `MachOGen`, `MemScan`, `GenEarly`,
+`OnImageConfig`, `MpDiag`, `ELFGen`.
+
+Attributes are `name\0value\0` pairs: `Includes` (7,035; comma-separated
+library lists such as `BMLuaLib`, `TechniqueTracker`, `LuaFuncHelper`),
+`ObMpAttributes` (2,121; obfuscated values), `Flags` (1,188) and
+`ObProcessAttributes` (3).  `Ob`-prefixed values are decoded by the engine with
+`FUN_1805afc44` plus the substitution table at `0x180dc18a0`.
+
+The body is a normal Lua 5.1 chunk (`FUN_1803e6f18` → `FUN_180a9a76c`): function
+prototypes, 32-bit string lengths, **signed integer** number constants and
+debug info (dropped by the loader).  `LuaSig` walks all of it: 69,057 function
+prototypes, 2,241,907 instructions and 631,623 string constants in this DB, plus
+the restored-header chunk that lets the bundled decompiler handle the 154
+headerless records too.  A script is detection logic, so it does not become a
+YARA byte pattern; the decompiled source and the constants are the useful
+output.
+
+Decoders: `defender2yara/defender/signature/macro_pcode.py` (`MacroPcodeSig`)
+and the rewritten `defender2yara/defender/signature/lua.py` (`LuaSig`, plus
+`parse_lua_chunk`, `phase_name` and `split_attributes`).  Wired into
+`Vdm.decode_record`; tests in `tests/test_signature_macro_pcode_lua.py`.
 
 ## Aggregate pseudo-threat records
 

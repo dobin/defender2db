@@ -18,6 +18,9 @@ from defender2yara.defender.signature.nscript import (
     NscriptBruteSig, NscriptNormalSig, NscriptSpSig,
 )
 from defender2yara.defender.signature.macro_source import MacroSourceSig
+from defender2yara.defender.signature.macro_pcode import (
+    MACRO_PCODE_SIGS, MacroPcodeSig,
+)
 from defender2yara.defender.signature.cksimplerec import (
     CkOldRecSig, CkSimpleRecSig,
 )

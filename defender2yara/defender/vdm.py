@@ -179,6 +179,8 @@ class Vdm:
             entry = NscriptBruteSig(data,ptr)
         elif sig_type == "SIGNATURE_TYPE_MACRO_SOURCE":
             entry = MacroSourceSig(data,ptr)
+        elif sig_type in MACRO_PCODE_SIGS:
+            entry = MacroPcodeSig(data,ptr)
         elif sig_type == "SIGNATURE_TYPE_CKSIMPLEREC":
             entry = CkSimpleRecSig(data,ptr)
         elif sig_type == "SIGNATURE_TYPE_CKOLDREC":

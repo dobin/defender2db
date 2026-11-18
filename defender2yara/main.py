@@ -16,6 +16,7 @@ from defender2yara.defender.download import get_latest_signature_vdm, download_l
 from defender2yara.defender.luaparse import fixup_lua_data, lua_decompile, lua_disassemble, lua_decompile_data
 from defender2yara.defender.lua_backend import load_lua_backend
 from defender2yara.defender.signature import *
+from defender2yara.defender.signature.lua import LUA_HEADER
 from defender2yara.util.utils import hexdump
 from tqdm import tqdm
 import logging
@@ -359,20 +360,29 @@ def get_lua_from_threat(threat:Threat, diagnostics=None) -> List[bytes]:
             body = getattr(sig, "body", None)
             if body is None:
                 body = sig.sig_data
-            lua_header_offset = body.find(b'\x1bLuaQ')
-            if lua_header_offset < 0:
-                if getattr(sig, "body_format", None) == "mplua_headerless":
-                    # A known variant whose instruction set the bundled
-                    # decompiler does not implement.  This is not a parse
-                    # failure, so do not emit one warning per record.
-                    logger.debug("Unsupported headerless Lua body: %s", context)
-                    diagnostics.append({'offset': offset, 'status': 'unsupported',
-                                        'message': 'Headerless MpLua body'})
-                    continue
-                logger.warning("No Lua header: %s", context)
-                diagnostics.append({'offset': offset, 'status': 'error', 'message': 'No Lua header'})
-                continue
-            lua_data = body[lua_header_offset:]
+            lua_data = getattr(sig, "lua_chunk_data", None)
+            lua_header_offset = 0
+            if lua_data is None:
+                lua_header_offset = body.find(b'\x1bLuaQ')
+                if lua_header_offset < 0:
+                    if getattr(sig, "body_format", None) == "mplua_headerless":
+                        # The engine treats a first dword of 1 as "no header"
+                        # and still undumps the function after the 12-byte
+                        # pseudo header.  Restore the standard header so the
+                        # bundled decompiler can read it.
+                        if len(body) >= 12:
+                            lua_data = LUA_HEADER + body[12:]
+                        else:
+                            logger.debug("Truncated headerless Lua body: %s", context)
+                            diagnostics.append({'offset': offset, 'status': 'error',
+                                                'message': 'Truncated headerless MpLua body'})
+                            continue
+                    else:
+                        logger.warning("No Lua header: %s", context)
+                        diagnostics.append({'offset': offset, 'status': 'error', 'message': 'No Lua header'})
+                        continue
+                else:
+                    lua_data = body[lua_header_offset:]
             lua_decompiled = lua_decompile_data(lua_data)
             if lua_decompiled is None or b'DECOMPILER ERROR' in lua_decompiled:
                 logger.warning("Lua decompilation incomplete: %s lua_header_offset=%d; trying disassembly", context, lua_header_offset)

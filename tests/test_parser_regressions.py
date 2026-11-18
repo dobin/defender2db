@@ -194,21 +194,25 @@ class LuaTests(unittest.TestCase):
         self.assertIn(b"return", decompile_data(chunk))
         self.assertIn(b"return", decompile_data(fixed))
 
-    def test_headerless_body_has_no_warning(self):
+    def test_headerless_body_is_restored_and_decompiled(self):
+        # The engine treats a first dword of 1 as a chunk without the 12-byte
+        # MpLua header; everything after it is still a normal function.
+        headerless = b"\x01" + b"\0" * 11 + mplua_chunk()[12:]
         name = b"Bedep\0"
         attributes = b"Includes\0Bedep\0"
-        body = b"\x01" + b"\0" * 23 + b"\x02\x02\x04\0\0\0" + b"\0" * 4
-        payload = bytes([len(name), 0x11]) + struct.pack("<HI", len(attributes), len(body))
-        payload += name + attributes + body
+        payload = bytes([len(name), 0x11]) + struct.pack("<HI", len(attributes), len(headerless))
+        payload += name + attributes + headerless
         sig = LuaSig(record(0xBD, payload))
         self.assertEqual(sig.body_format, "mplua_headerless")
-        self.assertIsNone(sig.lua_bytecode)
+        self.assertEqual(sig.lua_bytecode, mplua_chunk())
+        self.assertIsNotNone(sig.chunk)
         threat = SimpleNamespace(threat_name="!InfrastructureShared", threat_id=1, signatures=[sig])
         sig.offset = 0
         diagnostics = []
         with self.assertNoLogs("defender2yara", level="WARNING"):
-            self.assertEqual(get_lua_from_threat(threat, diagnostics), [])
-        self.assertEqual(diagnostics[0]["status"], "unsupported")
+            scripts = get_lua_from_threat(threat, diagnostics)
+        self.assertEqual(diagnostics, [])
+        self.assertIn(b"return", scripts[0])
 
     def test_missing_header_and_failed_decompile(self):
         sig = SimpleNamespace(sig_type='SIGNATURE_TYPE_LUASTANDALONE', sig_data=b'no Lua')

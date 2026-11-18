@@ -73,6 +73,18 @@
     "description": "A macro source signature: an ordered sequence of normalised macro/VBA routine hashes for a specific macro stream kind.",
     "detail": "SIG_MACRO_SOURCE.md"
   },
+  "MACRO_PCODE": {
+    "description": "A legacy macro p-code fingerprint: three 32-bit routine keys derived from the normalised VBA p-code of a module. It is a structural family signature, not a byte pattern.",
+    "detail": "SIG_MACRO_PCODE.md"
+  },
+  "MACRO_PCODE64": {
+    "description": "A macro p-code fingerprint: three 64-bit routine keys (CRC-32, CRC-16 and length) derived from the normalised VBA p-code of a module. It is a structural family signature, not a byte pattern.",
+    "detail": "SIG_MACRO_PCODE.md"
+  },
+  "LUASTANDALONE": {
+    "description": "A standalone MpLua script: precompiled Lua detection logic plus the engine phase it runs in. It is a script, not a file pattern.",
+    "detail": "SIG_LUA.md"
+  },
   "FILEPATH": {
     "description": "A file path signature: a known-folder root (CSIDL or engine pseudo-folder) plus a case-insensitive path or glob pattern.",
     "detail": "SIG_FILEPATH.md"

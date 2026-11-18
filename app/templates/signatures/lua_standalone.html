@@ -1,0 +1,30 @@
+{% set d = sig.details %}
+{% set c = d.get('chunk') or {} %}
+<dl>
+  <dt>Phase</dt><dd>{{ d.get('phase_name') }} ({{ d.get('script_type') }})</dd>
+  {% if d.get('record_name') %}<dt>Engine label</dt><dd>{{ d.get('record_name') }}</dd>{% endif %}
+  <dt>Body</dt><dd>{{ d.get('body_format') }}, {{ d.get('body_size') }} bytes</dd>
+  {% if c %}
+    <dt>Chunk</dt><dd>Lua {{ c.get('version') }}, {{ c.get('functions') }} function(s), {{ c.get('instructions') }} instructions, {{ c.get('string_count') }} string constant(s)</dd>
+  {% endif %}
+</dl>
+{% if d.get('attributes') %}
+<table class="table table-sm">
+  <thead><tr><th>Attribute</th><th>Value</th></tr></thead>
+  <tbody>
+  {% for item in d.get('attributes', []) %}
+    <tr>
+      <td>{{ item.get('name') }}{% if item.get('obfuscated') %} <span class="badge bg-secondary">obfuscated</span>{% endif %}</td>
+      <td><code>{{ item.get('value') }}</code></td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+{% if c.get('string_constants') %}
+<dt>String constants</dt>
+<ol>
+  {% for value in c.get('string_constants', [])[:24] %}<li><code>{{ value }}</code></li>{% endfor %}
+</ol>
+{% endif %}
+<p class="text-muted small">The body is a Lua 5.1 chunk executed by Defender's MpLua engine; open the generated output to read the decompiled script.</p>

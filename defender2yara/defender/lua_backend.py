@@ -23,6 +23,11 @@ def load_lua_backend():
         )
 
     name = "_defender2db_explorer_lua"
+    # A reload (tests call cache_clear) must not reuse the previous package's
+    # submodules: `from .luadec import ...` would otherwise resolve them from
+    # sys.modules without binding them onto the new parent module.
+    for key in [key for key in sys.modules if key == name or key.startswith(name + ".")]:
+        del sys.modules[key]
     spec = importlib.util.spec_from_file_location(
         name, package / "__init__.py", submodule_search_locations=[str(package)]
     )

@@ -1,0 +1,20 @@
+{% set d = sig.details %}
+<dl>
+  <dt>Key width</dt><dd>{{ d.get('key_bits') }} bit</dd>
+  <dt>Keys used</dt><dd>{{ d.get('key_count') }} of 3{% if d.get('unset_slots') %} (slot{% if d.get('unset_slots')|length > 1 %}s{% endif %} {{ d.get('unset_slots')|join(', ') }} unset){% endif %}</dd>
+  {% if d.get('record_name') %}<dt>Engine label</dt><dd>{{ d.get('record_name') }}</dd>{% endif %}
+</dl>
+<table class="table table-sm">
+  <thead><tr><th>#</th><th>Key</th><th>CRC-32</th>{% if d.get('is_64bit') %}<th>CRC-16</th><th>Length</th>{% endif %}</tr></thead>
+  <tbody>
+  {% for key in d.get('decoded_keys', []) %}
+    <tr>
+      <td>{{ loop.index0 }}</td>
+      <td><code>{{ key.get('hex') }}</code>{% if key.get('unset') %} <span class="badge bg-secondary">unset</span>{% endif %}</td>
+      <td><code>{{ key.get('crc32') }}</code></td>
+      {% if d.get('is_64bit') %}<td><code>{{ key.get('crc16') }}</code></td><td>{{ key.get('length') }}</td>{% endif %}
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+<p class="text-muted small">Keys fingerprint the engine's normalised VBA p-code: two of them must match a module's hash pair. They are not file hashes.</p>
