@@ -356,34 +356,45 @@ def describe_value(value: int, length: int, flags: int) -> str:
 
 
 def describe_side(flags: int, length: int, value: int,
-                  condition=None, written=None) -> str:
-    """Human-readable predicate for one side of a sig-tree edge."""
+                  condition=None, written=None,
+                  value_hint: str = None) -> str:
+    """Human-readable predicate for one side of a sig-tree edge.
+
+    ``value_hint`` names the live value the condition is evaluated against,
+    e.g. ``process command line`` for ``BM_ProcessStart``.  Including it keeps
+    a value-only predicate from being mistaken for a test of the file content
+    or image path.
+    """
     if flags & 0x02 and condition is None:
-        return "any"
-    if condition is not None:
+        text = "any"
+    elif condition is not None:
         if getattr(condition, "is_pattern", False):
             text = condition.text
             if flags & 0x10:
-                return f"wide pattern {text!r}" if flags & FLAG_WIDE else f"pattern {text!r}"
-            return f"pattern {text!r}"
-        if getattr(condition, "is_hash", False):
-            return f"{condition.kind} == {condition.text}"
-        return condition.text
-
-    if value is None:
-        return f"conditional ({length})"
-    if flags & 0x100:
-        return f"numeric == 0x{value:08x}"
-
-    if flags & 0x01:
-        operator = "ends with"
-    elif flags & 0x04:
-        operator = "equals"
+                text = (f"wide pattern {text!r}" if flags & FLAG_WIDE
+                        else f"pattern {text!r}")
+            else:
+                text = f"pattern {text!r}"
+        elif getattr(condition, "is_hash", False):
+            text = f"{condition.kind} == {condition.text}"
+        else:
+            text = condition.text
+    elif value is None:
+        text = f"conditional ({length})"
+    elif flags & 0x100:
+        text = f"numeric == 0x{value:08x}"
     else:
-        operator = "starts with"
+        if flags & 0x01:
+            operator = "ends with"
+        elif flags & 0x04:
+            operator = "equals"
+        else:
+            operator = "starts with"
+        text = f"{operator} {describe_value(value, length, flags)}"
 
-    text = describe_value(value, length, flags)
-    return f"{operator} {text}"
+    if value_hint and text != "any":
+        return f"{value_hint} {text}"
+    return text
 
 # ``tree_kind`` -> attribute id namespace observed in the rules.
 # The engine selects a per-kind sigattr notifier context
@@ -631,6 +642,7 @@ class SigTreeEdge:
         condition = self.condition("left")
         text = describe_side(
             self.left_flags, self.left_length, self.left_value, condition,
+            value_hint=self.value_hint,
         )
         if condition is not None and condition.is_hash and self.left_value_text:
             text += f"; value word decodes to '{self.left_value_text}'"
@@ -642,6 +654,7 @@ class SigTreeEdge:
         condition = self.condition("right")
         text = describe_side(
             self.right_flags, self.right_length, self.right_value, condition,
+            value_hint=self.value_hint,
         )
         if condition is not None and condition.is_hash and self.right_value_text:
             text += f"; value word decodes to '{self.right_value_text}'"
@@ -650,11 +663,8 @@ class SigTreeEdge:
     @property
     def summary(self) -> str:
         """One-line decoded description of the edge."""
-        name = self.attribute_name
-        if self.value_hint:
-            name = f"{name} [{self.value_hint}]"
         return (
-            f"{name}: left {self.left_predicate}; "
+            f"{self.attribute_name}: left {self.left_predicate}; "
             f"right {self.right_predicate}"
         )
 
@@ -993,15 +1003,16 @@ def enrich_sigtree_details(details: dict) -> dict:
                 edge[f"{side}_value"] = value
             condition = by_side.get(side)
             known = KNOWN_VALUE_STRINGS.get((value, length))
-            predicate = describe_side(flags, length, value, condition)
+            predicate = describe_side(
+                flags, length, value, condition, value_hint=hint,
+            )
             if condition is not None and condition.is_hash and known:
                 predicate += f"; value word decodes to '{known}'"
             edge[f"{side}_flags_text"] = edge_flags_text(flags)
             edge[f"{side}_value_text"] = known
             edge[f"{side}_predicate"] = predicate
-        label = f"{name} [{hint}]" if hint else name
         edge["summary"] = (
-            f"{label}: left {edge['left_predicate']}; "
+            f"{name}: left {edge['left_predicate']}; "
             f"right {edge['right_predicate']}"
         )
         edges.append(edge)

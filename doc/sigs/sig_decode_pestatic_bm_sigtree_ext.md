@@ -545,17 +545,26 @@ The record (local id `2465931`, 4 edges, variant 0) decodes to:
 
 | # | event | left | right |
 |--:|-------|------|-------|
-| 1 | `BM_ProcessStart` (`0x4011`) | command-line suffix, 26 wide chars, CRC `0xf4202780` | any |
-| 2 | `BM_EngineInternal` (`0x4017`) | wide prefix `SMS_THREAT` | `HackTool:Win32/CobaltStrike.I!sms` |
-| 3 | `BM_EngineInternal` (`0x4017`) | wide prefix `SMS_THREAT` | `HackTool:Win64/CobaltStrike.I!sms` |
-| 4 | `BM_SignatureAnchor` (`0x40ff`) | 36-character opaque anchor id, CRC `0x1762ac1e` | any |
+| 1 | `BM_ProcessStart` (`0x4011`) | full command-line suffix, 26 wide chars, CRC `0xf4202780` | any |
+| 2 | `BM_EngineInternal` (`0x4017`) | wide prefix `SMS_THREAT` (tag) | `HackTool:Win32/CobaltStrike.I!sms` (payload) |
+| 3 | `BM_EngineInternal` (`0x4017`) | wide prefix `SMS_THREAT` (tag) | `HackTool:Win64/CobaltStrike.I!sms` (payload) |
+| 4 | `BM_SignatureAnchor` (`0x40ff`) | prefix of the 36-character opaque anchor id, CRC `0x1762ac1e` | any |
 
 Edge 2/3 are a detection chain: the `J` behaviour signature fires when the
 `I` SMS threat (32- or 64-bit) has been detected.  Edge 1 is a real
-command-line suffix predicate; the exact 26-character suffix needs a sample or
-the runtime probe.  Edge 4 is the signature's compiler-assigned anchor id, not
-a live value; `0x1762ac1e` must stay opaque rather than be guessed from a CRC
-match.
+**command-line suffix** predicate: the engine hashes the full process command
+line, not the file content, the image path, or an argument in isolation.  The
+exact 26-character suffix needs a sample or the runtime probe.  Edge 4 is a
+**prefix** predicate on the signature's compiler-assigned anchor id, not a live
+value and not a file-content or command-line test; `0x1762ac1e` must stay
+opaque rather than be guessed from a CRC match.
+
+The rendered condition text carries the same distinction, e.g.:
+
+```
+BM_ProcessStart: left process command line ends with crc32=0xf4202780 (26 wide chars); right any
+BM_SignatureAnchor (rule/group identity, not a live event): left opaque compiler-assigned anchor id starts with crc32=0x1762ac1e (36 wide chars); right any
+```
 
 ## 4. Resulting code
 

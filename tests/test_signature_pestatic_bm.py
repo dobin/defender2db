@@ -206,8 +206,12 @@ class SigTreeAttributeTests(unittest.TestCase):
         self.assertEqual(sig.edges[0].value_hint, "process command line")
         self.assertEqual(sig.edges[0].left_flags_text, "suffix|wide")
         self.assertEqual(sig.edges[0].left_predicate,
-                         "ends with crc32=0xf4202780 (26 wide chars)")
+                         "process command line ends with "
+                         "crc32=0xf4202780 (26 wide chars)")
         self.assertEqual(sig.edges[0].right_predicate, "any")
+        self.assertEqual(sig.edges[3].left_predicate,
+                         "opaque compiler-assigned anchor id starts with "
+                         "crc32=0x1762ac1e (36 wide chars)")
         self.assertEqual(sig.edges[1].left_value_text, "SMS_THREAT")
         self.assertEqual(sig.edges[1].right_value_text,
                          "HackTool:Win32/CobaltStrike.I!sms")
@@ -240,7 +244,8 @@ class SigTreeAttributeTests(unittest.TestCase):
         self.assertEqual(edge["attribute_name"], "BM_EngineInternal")
         self.assertEqual(edge["left_value_text"], "SMS_THREAT")
         self.assertEqual(edge["right_value_text"], "HackTool:Win32/CobaltStrike.I!sms")
-        self.assertIn("starts with", edge["left_predicate"])
+        self.assertEqual(edge["left_predicate"],
+                         "internal tag / payload starts with 'SMS_THREAT'")
 
 
 if __name__ == "__main__":
