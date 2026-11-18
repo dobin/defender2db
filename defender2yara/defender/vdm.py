@@ -197,6 +197,10 @@ class Vdm:
             entry = FolderNameSig(data,ptr)
         elif sig_type == "SIGNATURE_TYPE_VERSIONCHECK":
             entry = VersionCheckSig(data,ptr)
+        elif sig_type == "SIGNATURE_TYPE_KPAT":
+            entry = KpatSig(data,ptr)
+        elif sig_type == "SIGNATURE_TYPE_KPATEX":
+            entry = KpatExSig(data,ptr)
         else:
             entry = BaseSig(data,ptr)
         return entry

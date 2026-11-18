@@ -34,3 +34,6 @@ from defender2yara.defender.signature.pathname import (
     FilePathSig, FolderNameSig,
 )
 from defender2yara.defender.signature.versioncheck import VersionCheckSig
+from defender2yara.defender.signature.kpat import (
+    KPAT_SIGS, KpatExSig, KpatSig,
+)

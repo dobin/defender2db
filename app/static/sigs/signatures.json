@@ -101,5 +101,13 @@
   "FOLDERNAME": {
     "description": "A folder path signature: a known-folder root plus a case-insensitive directory path or glob pattern.",
     "detail": "SIG_FILEPATH.md"
+  },
+  "KPAT": {
+    "description": "A key pattern: a literal 8-byte anchor plus a byte pattern in which 0x90 matches any single byte. It is scanned against boot sectors, memory, decompressed buffers and macro data, not against one file format.",
+    "detail": "SIG_KPAT.md"
+  },
+  "KPATEX": {
+    "description": "An extended key pattern: the same literal 8-byte anchor plus a pattern using the engine's 0x90 wildcard language (skips, ranges, byte classes).",
+    "detail": "SIG_KPAT.md"
   }
 }

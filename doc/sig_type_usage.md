@@ -57,9 +57,9 @@ Counts are actual signature records, unpacked from every `threatObject` blob (no
 | 43 | `SIGNATURE_TYPE_LUASTANDALONE` | `0xBD` | 452 | 0.01% | 405 | parsed (wrapper + Lua chunk + phase) |
 | 44 | `SIGNATURE_TYPE_JAVAHSTR_EXT` | `0xBF` | 342 | 0.01% | 186 | parsed (YARA) |
 | 45 | `SIGNATURE_TYPE_HOSTSENTRY` | `0x64` | 204 | 0.00% | 2 | raw only / unimplemented |
-| 46 | `SIGNATURE_TYPE_KPAT` | `0xBB` | 183 | 0.00% | 178 | raw only / unimplemented |
+| 46 | `SIGNATURE_TYPE_KPAT` | `0xBB` | 183 | 0.00% | 178 | parsed (8-byte anchor + literal/wildcard tail) |
 | 47 | `SIGNATURE_TYPE_POLYVIR32` | `0x21` | 151 | 0.00% | 148 | raw only / unimplemented |
-| 48 | `SIGNATURE_TYPE_KPATEX` | `0xBC` | 82 | 0.00% | 71 | raw only / unimplemented |
+| 48 | `SIGNATURE_TYPE_KPATEX` | `0xBC` | 82 | 0.00% | 71 | parsed (8-byte anchor + wildcard-opcode tail) |
 | 49 | `SIGNATURE_TYPE_FOPEX64` | `0xC9` | 55 | 0.00% | 54 | raw only / unimplemented |
 | 50 | `SIGNATURE_TYPE_UNKNOWN` | `??` | 50 | 0.00% | 47 | raw only / unimplemented |
 | 51 | `SIGNATURE_TYPE_SNIDEX2` | `0xE6` | 49 | 0.00% | 2 | raw only / unimplemented |
@@ -738,6 +738,60 @@ in `HStrExtSubRule`, which now also exposes `case_sensitive`, `wildcard`,
 renders UTF-16LE/ASCII literal runs plus the wildcard tokens.  Tests:
 `tests/test_signature_cmdhstr.py`; existing DEX tests were updated because
 named records keep their sub-rules.
+
+## Eleventh round: key patterns (KPAT / KPATEX)
+
+Full write-up: `doc/sigs/sig_decode_kpat.md`.  Engine notes were added to
+`cache/functions_vdm.md` §19.
+
+`SIGNATURE_TYPE_KPAT` (`0xbb`) and `SIGNATURE_TYPE_KPATEX` (`0xbc`) are the
+only implemented types besides HSTR whose payload is directly a matchable
+**byte pattern**.  They are not format-specific: one `kpat` matcher is used by the
+boot-sector / MBR / VBR scan, memory and decompressed-buffer scans and the VBA
+macro reader.  Both types share one layout::
+
+    u8  pattern_length          total length, 8 + len(tail); 9..197 observed
+    u8  anchor[8]               literal first 8 bytes (Aho-Corasick key)
+    u8  tail[pattern_length-8]  remaining pattern bytes
+    u8  name_length             optional
+    u8  name[name_length]       optional aggregator reference label
+
+* `KPAT` tails are literal bytes in which `0x90` is a single-byte wildcard;
+  `0x00` stays a literal NUL.  The anchor is always literal, even when it
+  contains `0x90`.
+* `KPATEX` tails use the HSTR `0x90` wildcard language (terminator `90 00`,
+  skip `90 01 n`, skip range `90 02 n`, byte class `90 03`, repeat
+  `90 04`/`90 05`, literal `90 90`) and must end with `90 00`; the loader
+  validates them with `FUN_1802b1974`.
+
+The engine finds the 8-byte anchor with the multi-pattern matcher
+(`FUN_180047200` inside `FUN_1800fa880`) and only then verifies the tail, byte
+by byte for `KPAT` or through the wildcard matcher `FUN_180049320` for
+`KPATEX`.  The two tables (`DAT_181115ca0` / `DAT_181115c90`, element type
+`0x4bb` / `0x4bc`) are registered by the HSTR module init `FUN_180a1f948`,
+not by a dedicated parser: they use the generic template loader
+(`FUN_1804eae94` + `FUN_180181cc4`, template at `0x180f07500`).
+
+The optional name is the group label used by aggregator expressions.  It is
+written `!#KPAT:<label>` (or `!#TEL:KPAT:...`, `!#SLFPER:KPAT:...`) in
+`!InfrastructureShared` and referenced as `KPAT:<label>`; real-threat records
+are anonymous and are addressed through their owner
+(`KPATEX:Worm:INF/Autorun.A`).
+
+Coverage in `cache/threats.db`:
+
+| type | records | real (threats) | shared | named | decoded |
+|------|--------:|---------------:|-------:|------:|--------:|
+| `KPAT` `0xbb` | 208 | 183 (178) | 25 | 9 labels | 208, 0 warnings |
+| `KPATEX` `0xbc` | 123 | 82 (71) | 41 | 31 labels | 123, 0 warnings |
+
+`KPAT` is dominated by DOS/boot-sector code (`Virus:DOS/Rex.1637`,
+`Virus:DOS/AOS`) plus PDF/key-material patterns.  `KPATEX` is dominated by
+SWF/ActionScript bytecode, `autorun.inf` text and shellcode.  Both are
+expressible in YARA hex; the decoder renders `pattern_hex` (`??`, `[n]`,
+`[0-n]`, `( aa | bb )`) but no generator is wired up.  Decoders:
+`KpatSig` / `KpatExSig` in `defender2yara/defender/signature/kpat.py`,
+wired into `Vdm.decode_record`; tests in `tests/test_signature_kpat.py`.
 
 ## Aggregate pseudo-threat records
 
