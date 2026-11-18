@@ -176,6 +176,21 @@ class PersistenceTests(unittest.TestCase):
             get_signature_details(signature['id'], self.path)['details'],
             signature['details'])
 
+    def test_macro_source_repeated_routine_key_is_stored_once(self):
+        # An ordered sequence may name the same routine twice; the lookup table
+        # is keyed by (signature_id, key) and must not reject the record.
+        payload = (bytes([0]) + struct.pack('<I', 2)
+                   + struct.pack('<II', 0x11111111, 0x11111111))
+        self.publish(sources=[synthetic_vdm(threat_records([tlv(0x43, payload)]))])
+
+        signature = get_threat_details(1, self.path)['signatures'][0]
+        self.assertEqual(signature['details']['routine_keys'],
+                         ['0000000011111111', '0000000011111111'])
+        reference = signature['details']['routine_references']['0000000011111111']
+        self.assertEqual(reference['record_count'], 1)
+        self.assertEqual(reference['threat_count'], 1)
+        self.assertTrue(reference['used_by_current'])
+
     def test_macro_source_references_degrade_when_index_is_missing(self):
         payload = bytes([0]) + struct.pack('<I', 1) + struct.pack('<I', 0x12345678)
         self.publish(sources=[synthetic_vdm(threat_records([tlv(0x43, payload)]))])

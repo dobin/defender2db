@@ -98,7 +98,10 @@ def store_source(connection, vdm, *, include_raw, generate):
         if include_raw:
             raw_rows.append((signature_id, vdm.raw_data[sig.offset:sig.offset + sig.record_size]))
         if sig.sig_type_id == MACRO_SOURCE_TYPE_ID and isinstance(details, dict):
-            for key in details.get('routine_keys', ()):
+            # A record is an ordered routine sequence, so the same key may
+            # legitimately repeat.  The lookup table only indexes which records
+            # require a hash, so keep the first occurrence per signature.
+            for key in dict.fromkeys(details.get('routine_keys', ())):
                 macro_rows.append((signature_id, owner, key))
         if len(signature_rows) >= BATCH_SIZE:
             _insert_records(connection, signature_rows, raw_rows, macro_rows)
