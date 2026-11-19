@@ -201,7 +201,7 @@ class SigTreeAttributeTests(unittest.TestCase):
             "BM_ProcessStart",
             "BM_EngineInternal",
             "BM_EngineInternal",
-            "BM_SignatureAnchor (rule/group identity, not a live event)",
+            "BM_SignatureAnchor (rule/group identity)",
         ])
         self.assertEqual(sig.edges[0].value_hint, "process command line")
         self.assertEqual(sig.edges[0].left_flags_text, "suffix|wide")

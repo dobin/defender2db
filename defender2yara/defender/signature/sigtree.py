@@ -250,7 +250,7 @@ BM_EVENT_VALUE_HINTS = {
 # Attribute ids that are not BM event ids.
 SPECIAL_ATTRIBUTE_NAMES = {
     0xF000: "LuaCallSigattrBM (Lua callback / !BMGroup)",
-    0x40FF: "BM_SignatureAnchor (rule/group identity, not a live event)",
+    0x40FF: "BM_SignatureAnchor (rule/group identity)",
 }
 
 _CASE_FOLD = bytes((value + 32 if 0x41 <= value <= 0x5A else value)
