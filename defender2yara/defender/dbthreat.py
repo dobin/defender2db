@@ -44,7 +44,8 @@ class Source(Base):
 
 class DbThreat(Base):
     __tablename__ = 'threat'
-    __table_args__ = (UniqueConstraint('source_id', 'begin_offset'),)
+    __table_args__ = (UniqueConstraint('source_id', 'begin_offset'),
+                      Index('threat_family_lookup', 'source_id', 'family'))
     id: Mapped[int] = mapped_column(primary_key=True)
     source_id: Mapped[int] = mapped_column(ForeignKey('source.id'))
     begin_offset: Mapped[int]

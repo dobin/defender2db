@@ -289,7 +289,12 @@ exists (for example the GoLang allow-list keys have a coincidental `0xea`
   (`crc32(payload) | type << 32 | size << 40`) in a deferred, indexed column.
 * `defender2yara/threat_api.py` — `RecordIdResolver` resolves NID64 keys against
   that column for the HTML page, REST API and MCP; old databases without the
-  column report resolution as unavailable instead of failing.
+  column report resolution as unavailable instead of failing. Reference-only
+  threats also get `related_threats`, the richest siblings in the same family.
+* `app/templates/signatures/nid.html` — NID cards explain why the 32-bit
+  name-slot id cannot be resolved and show its id block.
+* `app/templates/threat.html` — reference-only threats list sibling family
+  definitions, where the detection logic usually lives.
 * `app/templates/signatures/nid64.html` — the NID64 card links to the referenced
   record and its owning threat.
 * `app/views.py` and `app/templates/threat.html` — the decoded-record set keeps

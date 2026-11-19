@@ -24,6 +24,32 @@ NID64_TYPE_ID = 0xCE
 # the same threat, so the threat page needs the neighbour context.
 VERSIONCHECK_TYPE_ID = 0x7A
 
+# Signature types that carry no file content: references and version gates.
+# A threat made only of these is a name/alias entry with no matching logic.
+REFERENCE_TYPE_IDS = frozenset({0x55, 0x7E, NID64_TYPE_ID})
+NO_CONTENT_TYPE_IDS = REFERENCE_TYPE_IDS | {VERSIONCHECK_TYPE_ID}
+
+# Family cross-reference shown on the threat page.  Most NID-only threats are
+# name/alias entries; their siblings carry the actual detection logic.
+RELATED_THREAT_LIMIT = 15
+
+
+def related_family_threats(session, threat) -> list[dict]:
+    """Other threats of the same family in the same import, richest first."""
+    if not threat.family:
+        return []
+    rows = session.execute(
+        select(DbThreat.id, DbThreat.name, DbThreat.type, DbThreat.platform,
+               DbThreat.signature_count)
+        .where(DbThreat.source_id == threat.source_id,
+               DbThreat.family == threat.family,
+               DbThreat.id != threat.id)
+        .order_by(DbThreat.signature_count.desc(), DbThreat.name)
+        .limit(RELATED_THREAT_LIMIT)
+    )
+    return [dict(row._mapping) for row in rows]
+
+
 # SIGNATURE_TYPE_MACRO_SOURCE.  Its keys are one-way routine hashes, so the only
 # useful resolution is "which other records require the same routine?".
 MACRO_SOURCE_TYPE_ID = 0x43
@@ -299,6 +325,12 @@ def get_threat_details(threat_id: int, database=DEFAULT_DATABASE) -> dict:
         result['boundary_ids'] = list(session.scalars(select(Signature.id).where(
             Signature.threat_id == threat_id, Signature.role.in_(['threat_begin', 'threat_end']))
             .order_by(Signature.offset)))
+        reference_only = (
+            bool(signatures)
+            and all(sig.type_id in NO_CONTENT_TYPE_IDS for sig in signatures)
+            and any(sig.type_id in REFERENCE_TYPE_IDS for sig in signatures))
+        result['related_threats'] = (
+            related_family_threats(session, row) if reference_only else [])
         return result
 
 

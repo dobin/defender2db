@@ -1,10 +1,18 @@
 {% set d = sig.details %}
 <dl class="row">
-  <dt class="col-sm-3">Record key</dt><dd class="col-sm-9"><code>{{ d.get('record_key_hex', '') }}</code></dd>
+  <dt class="col-sm-3">Record key</dt>
+  <dd class="col-sm-9"><code>{{ d.get('record_key_hex', '') }}</code>{% if d.get('id_block') is not none and not d.get('is_legacy_id') %} <span class="text-muted">(block {{ d.get('id_block')|hexnum(4) }})</span>{% endif %}</dd>
+  {% if d.get('is_legacy_id') %}
+  <dt class="col-sm-3">ID type</dt><dd class="col-sm-9">legacy flat name-table id</dd>
+  {% endif %}
   <dt class="col-sm-3">Kind / namespace</dt><dd class="col-sm-9">{{ d.get('record_kind')|hexnum }} / {{ d.get('kind_label', '') }}</dd>
   <dt class="col-sm-3">Purpose</dt><dd class="col-sm-9">{{ d.get('purpose_label', '') }}</dd>
-  <dt class="col-sm-3">Definition group</dt><dd class="col-sm-9">{{ d.get('record_name', '') }}</dd>
-  {% if d.get('has_record_id_layout') %}
-  <dt class="col-sm-3">Packed record ID</dt><dd class="col-sm-9">Type {{ d.get('packed_sig_type', '') }} · Size {{ d.get('packed_size', '') }} · CRC32 {{ d.get('packed_crc32')|hexnum(8) }}</dd>
+  {% if d.get('record_name') %}
+  <dt class="col-sm-3">Definition group</dt><dd class="col-sm-9">{{ d.get('record_name') }}</dd>
   {% endif %}
+  <dt class="col-sm-3">Resolution</dt>
+  <dd class="col-sm-9">A NID is a 32-bit name-slot id. It has no packed type/size, so there is no
+    record to resolve; the referenced name or object is usually runtime or cloud data. If this
+    threat is NID-only, its detection logic normally lives in sibling definitions of the same
+    family.</dd>
 </dl>

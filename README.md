@@ -117,6 +117,12 @@ threat. This is a pointer, not a detection rule. Keys that are plain hashes or
 point at runtime/cloud records show no target. SNID keys are not payload hashes
 and stay unresolved, and group names describe lists, not the referenced record.
 
+NID keys are 32-bit name-slot ids and carry no packed type/size, so they are not
+resolved. Their cards show the id block and namespace, and threats made only of
+NID/NID64/SNID references list up to 15 sibling threats from the same family
+(`related_threats` in the API) so the definitions that carry actual detection
+logic are one click away.
+
 Databases built before record ids were stored remain readable; their NID64 cards
 say that resolution is unavailable until rebuilt with `--convert`.
 
@@ -157,7 +163,8 @@ GET /api/signatures/34/raw
 ```
 
 Threat details contain scalar threat fields, severity display, `generated`,
-`raw_available`, ordered `signatures` (excluding framing), and `boundary_ids`.
+`raw_available`, ordered `signatures` (excluding framing), `boundary_ids`, and
+`related_threats` (richest same-family siblings, only for no-content threats).
 Signature details contain `id`, `source_id`, `threat_id`, `type_id`, `type`,
 `offset`, `size` (payload bytes), `header_size`, `record_size`, `role`,
 `decode_status`, `details_version`, `details`, and `raw_available`. The raw route

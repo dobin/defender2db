@@ -155,6 +155,44 @@ class YaraViewTests(unittest.TestCase):
         self.assertIn(b'local ID 34', page.data)
         self.assertNotIn(b'not a packed record id', page.data)
 
+    def test_web_nid_card_and_related_family(self):
+        from defender2yara.defender.dbthreat import Signature
+
+        engine = database_engine(self.database)
+        try:
+            with engine.begin() as connection:
+                connection.execute(DbThreat.__table__.update()
+                                   .where(DbThreat.id == 2).values(family='ExampleFamily'))
+                connection.execute(insert(DbThreat), dict(
+                    id=4, source_id=1, begin_offset=4, defender_id=104,
+                    name='Trojan:Example.Sibling', category_id=0, severity_id=None,
+                    type='Trojan', platform='Win32', family='ExampleFamily', variant='',
+                    suffixes=[], signature_count=0,
+                    generated={'yara': {'status': 'empty', 'items': []},
+                               'lua': {'status': 'empty', 'items': []}},
+                ))
+                connection.execute(insert(Signature), dict(
+                    id=36, source_id=1, threat_id=2, offset=102, role='signature',
+                    type_id=0x55, payload_size=5, header_size=4, record_size=9,
+                    decode_status='decoded', details_version=1,
+                    details={
+                        'record_key_hex': '77d164ab', 'record_kind': 0x11,
+                        'record_name': '', 'has_name': False, 'id_block': 0x77D1,
+                        'is_legacy_id': False, 'kind_label': 'name slots (packers, tags)',
+                        'likely_purpose': 'naming', 'purpose_label': 'naming',
+                        'purpose_note': 'A name slot in the internal id table.',
+                        'description': 'key=0x77d164ab kind=0x11',
+                    },
+                ))
+        finally:
+            engine.dispose()
+        page = self.web_client().get('/threat/2')
+        self.assertIn(b'Other definitions in family ExampleFamily', page.data)
+        self.assertIn(b'Trojan:Example.Sibling', page.data)
+        self.assertIn(b'/threat/4', page.data)
+        self.assertIn(b'block 0x77d1', page.data)
+        self.assertIn(b'32-bit name-slot id', page.data)
+
     def test_web_local_ids_json_sections_and_escaping(self):
         self.add_signature()
         client = self.web_client()

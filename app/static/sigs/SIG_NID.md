@@ -135,6 +135,10 @@ IL2 patterns, `!#OrgSignerRmmNormal` for aggregator records). See
   the result is still just "this record/object exists in namespace K" - not a match rule.
   The web UI resolves that case: a NID64 card links to the referenced record and its
   owning threat when the shipped database contains it.
+* **A NID itself is not resolvable in the UI.** Its 32-bit key is a name-slot id with no
+  type/size, so there is no record id to follow. The card shows the id block and namespace,
+  and a threat made only of references lists sibling definitions from the same family so
+  you can reach the signatures that carry the actual detection logic.
 
 ## What to do with it
 

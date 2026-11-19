@@ -398,6 +398,8 @@ class PersistenceTests(unittest.TestCase):
             indexes = session.execute(text('PRAGMA index_list(signature)')).all()
             self.assertIn('signature_threat_order', [row[1] for row in indexes])
             self.assertIn('ix_signature_record_id', [row[1] for row in indexes])
+            indexes = session.execute(text('PRAGMA index_list(threat)')).all()
+            self.assertIn('threat_family_lookup', [row[1] for row in indexes])
             encoded = session.scalar(text('SELECT details FROM signature WHERE type_id=190 AND decode_status="decoded"'))
             self.assertNotIn('\": ', encoded)
             self.assertEqual(json.loads(encoded)['subrules'][0]['rule_bytes_hex'], '58353535')
