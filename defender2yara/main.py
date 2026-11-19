@@ -8,6 +8,7 @@ from defender2yara.defender.dbthreat import DEFAULT_DATABASE
 from defender2yara.database_build import build_database
 from defender2yara.conversion import store_source
 from packaging.version import Version
+from sqlalchemy.exc import OperationalError
 
 from defender2yara.defender.threat import Threat
 from defender2yara.yara.rule import YaraRule, compile_yara_source
@@ -337,6 +338,25 @@ def convert_threats(vdm, connection, include_raw=False):
     return store_source(connection, vdm, include_raw=include_raw, generate=generate_output)
 
 
+def is_disk_exhaustion(error):
+    message = str(error).lower()
+    return 'database or disk is full' in message or 'disk i/o error' in message
+
+
+def report_disk_exhaustion(path):
+    directory = os.path.dirname(os.path.abspath(path))
+    try:
+        free = shutil.disk_usage(directory).free
+    except OSError:
+        free = None
+    if free is None:
+        logger.error('Conversion failed: SQLite ran out of disk space while writing %s. '
+                     'Free disk space and retry.', path)
+    else:
+        logger.error('Conversion failed: SQLite ran out of disk space while writing %s '
+                     '(%.1f GB free). Free disk space and retry.', path, free / 1024 ** 3)
+
+
 def log_unparseable_signatures(stats):
     logger.info('Unparseable signatures: %d', sum(stats.values()))
     for (sig_type, sig_type_id), count in sorted(
@@ -537,55 +557,61 @@ def main(args):
     ) if args.convert else nullcontext(None)
 
     unparseable = Counter()
-    with context as connection:
-        # iterate through mpav and mpas - each can take a lot of memory
-        for name in ["mpav","mpas"]:
-            vdm: Vdm = None
+    try:
+        with context as connection:
+            # iterate through mpav and mpas - each can take a lot of memory
+            for name in ["mpav","mpas"]:
+                vdm: Vdm = None
 
-            major_version = ".".join(signature_version.split(".")[0:2])
-            minor_version = ".".join(signature_version.split(".")[2:4])
-            vdm_base_path = os.path.join(cache_dir,"vdm",major_version,'0.0')
-            vdm_delta_path = os.path.join(cache_dir,"vdm",major_version,minor_version)
-            base_file = os.path.join(vdm_base_path,name+"base.vdm")
-            delta_file = os.path.join(vdm_delta_path,name+"dlta.vdm")
+                major_version = ".".join(signature_version.split(".")[0:2])
+                minor_version = ".".join(signature_version.split(".")[2:4])
+                vdm_base_path = os.path.join(cache_dir,"vdm",major_version,'0.0')
+                vdm_delta_path = os.path.join(cache_dir,"vdm",major_version,minor_version)
+                base_file = os.path.join(vdm_base_path,name+"base.vdm")
+                delta_file = os.path.join(vdm_delta_path,name+"dlta.vdm")
 
-            logger.info(f"Loading base signature file: {base_file}")
-            logger.info(f"Creating vdm from files: {vdm_base_path}")
-            vdm = Vdm(base_file)
-            if os.path.exists(delta_file):
-                logger.info(f"Applying delta patch: {delta_file}")
-                vdm.apply_delta_vdm(delta_file)
-            # Parse the patched data, not the stale base-only signatures.
-            vdm.parse_files()
+                logger.info(f"Loading base signature file: {base_file}")
+                logger.info(f"Creating vdm from files: {vdm_base_path}")
+                vdm = Vdm(base_file)
+                if os.path.exists(delta_file):
+                    logger.info(f"Applying delta patch: {delta_file}")
+                    vdm.apply_delta_vdm(delta_file)
+                # Parse the patched data, not the stale base-only signatures.
+                vdm.parse_files()
 
-            #logger.info(f"VDM Target signature version: {vdm.version}")
-            #logger.info(f"VDM Target signature type   : {vdm.vdm_type}")
+                #logger.info(f"VDM Target signature version: {vdm.version}")
+                #logger.info(f"VDM Target signature type   : {vdm.vdm_type}")
 
-            if args.convert:
-                # convert threats to database
-                unparseable.update(convert_threats(vdm, connection, getattr(args, 'include_raw', False)))
-            elif args.asr:
-                # extract ASR entries
-                parse_asr(vdm)
-            else:
-                # extract ASR entries - around 24
-                #parse_asr(vdm)
+                if args.convert:
+                    # convert threats to database
+                    unparseable.update(convert_threats(vdm, connection, getattr(args, 'include_raw', False)))
+                elif args.asr:
+                    # extract ASR entries
+                    parse_asr(vdm)
+                else:
+                    # extract ASR entries - around 24
+                    #parse_asr(vdm)
 
-                # extract all threats with LUA
-                #parse_threat_lua(vdm)
+                    # extract all threats with LUA
+                    #parse_threat_lua(vdm)
 
-                # extract all LUA - around 50k, including ASR
-                #parse_sig_lua(vdm, name)
+                    # extract all LUA - around 50k, including ASR
+                    #parse_sig_lua(vdm, name)
 
-                # extract all threats
-                #parse_threats(vdm, search="Bearfoos.A!ml")
+                    # extract all threats
+                    #parse_threats(vdm, search="Bearfoos.A!ml")
 
-                # find a threat
-                #find = "Bearfoos.A"
-                #logger.info(f"Searching for threats with name: {find}")
-                #parse_threats(vdm, search=find)
+                    # find a threat
+                    #find = "Bearfoos.A"
+                    #logger.info(f"Searching for threats with name: {find}")
+                    #parse_threats(vdm, search=find)
 
-                pass
+                    pass
+    except OperationalError as error:
+        if not (args.convert and is_disk_exhaustion(error)):
+            raise
+        report_disk_exhaustion(getattr(args, 'db', DEFAULT_DATABASE))
+        sys.exit(1)
 
     if args.convert:
         log_unparseable_signatures(unparseable)

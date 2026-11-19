@@ -21,6 +21,7 @@ from defender2yara.main import main
 from defender2yara.yara.condition import YaraCondition
 from defender2yara.yara.rule import YaraRule, compile_yara_source
 from defender2yara.yara.strings import YaraString
+from sqlalchemy.exc import OperationalError
 
 
 def record(kind, payload):
@@ -148,6 +149,38 @@ class ContainerTests(unittest.TestCase):
                 main(args)
         build.assert_not_called()
         self.assertEqual(parse.call_count, 2)
+
+    def test_convert_reports_disk_exhaustion(self):
+        args = SimpleNamespace(download=False, convert=True, proxy=None, asr=False,
+                               db='cache/threats.db', include_raw=False)
+        error = OperationalError('INSERT INTO signature', {},
+                                 Exception('database or disk is full'))
+        with patch('defender2yara.main.load_lua_backend'), \
+             patch('defender2yara.main.get_latest_signature_version', return_value='1.463.330.0'), \
+             patch('defender2yara.main.get_latest_engine_version', return_value='1.1.26100.4'), \
+             patch('defender2yara.main.os.path.exists', return_value=False), \
+             patch('defender2yara.main.build_database'), \
+             patch('defender2yara.main.convert_threats', side_effect=error), \
+             patch('defender2yara.main.report_disk_exhaustion') as report, \
+             patch('defender2yara.main.Vdm'):
+            with self.assertRaises(SystemExit) as exit_info:
+                main(args)
+        self.assertEqual(exit_info.exception.code, 1)
+        report.assert_called_once_with('cache/threats.db')
+
+    def test_convert_does_not_hide_other_database_errors(self):
+        args = SimpleNamespace(download=False, convert=True, proxy=None, asr=False,
+                               db='cache/threats.db', include_raw=False)
+        error = OperationalError('INSERT INTO signature', {}, Exception('no such table'))
+        with patch('defender2yara.main.load_lua_backend'), \
+             patch('defender2yara.main.get_latest_signature_version', return_value='1.463.330.0'), \
+             patch('defender2yara.main.get_latest_engine_version', return_value='1.1.26100.4'), \
+             patch('defender2yara.main.os.path.exists', return_value=False), \
+             patch('defender2yara.main.build_database'), \
+             patch('defender2yara.main.convert_threats', side_effect=error), \
+             patch('defender2yara.main.Vdm'):
+            with self.assertRaises(OperationalError):
+                main(args)
 
     def test_extended_record_advancement(self):
         data = bytes([0, 255, 255, 255]) + struct.pack('<I', 3) + b'abc'
