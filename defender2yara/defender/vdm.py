@@ -219,8 +219,18 @@ class Vdm:
             entry = BruteSig(data,ptr)
         elif sig_type == "SIGNATURE_TYPE_FOP":
             entry = FopSig(data,ptr)
+        elif sig_type == "SIGNATURE_TYPE_FOP64":
+            entry = Fop64Sig(data,ptr)
         elif sig_type == "SIGNATURE_TYPE_FOPEX":
             entry = FopExSig(data,ptr)
+        elif sig_type == "SIGNATURE_TYPE_FOPEX64":
+            entry = FopEx64Sig(data,ptr)
+        elif sig_type == "SIGNATURE_TYPE_PEBMPAT":
+            entry = PebmPatSig(data,ptr)
+        elif sig_type == "SIGNATURE_TYPE_HOSTSENTRY":
+            entry = HostsEntrySig(data,ptr)
+        elif sig_type == "SIGNATURE_TYPE_POLYVIR32":
+            entry = Polyvir32Sig(data,ptr)
         else:
             entry = BaseSig(data,ptr)
         return entry

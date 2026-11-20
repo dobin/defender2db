@@ -73,7 +73,9 @@ from defender2yara.defender.constant import SIG_TYPES
 
 FOP_SIG = "SIGNATURE_TYPE_FOP"
 FOPEX_SIG = "SIGNATURE_TYPE_FOPEX"
-FOP_SIGS = (FOP_SIG, FOPEX_SIG)
+FOP64_SIG = "SIGNATURE_TYPE_FOP64"
+FOPEX64_SIG = "SIGNATURE_TYPE_FOPEX64"
+FOP_SIGS = (FOP_SIG, FOPEX_SIG, FOP64_SIG, FOPEX64_SIG)
 
 WILDCARD_MARKER = 0x90
 PATTERN_TERMINATOR = b"\x90\x00"
@@ -228,6 +230,18 @@ class FopSig(_FopBase):
         return details
 
 
+class Fop64Sig(FopSig):
+    """``SIGNATURE_TYPE_FOP64`` (``0xc8``) - 64-bit literal code pattern.
+
+    The on-disk payload is identical to :class:`FopSig`; only the scanner
+    target (x64 code vs x86 code) differs.
+    """
+
+    SIG_TYPE_ID = 0xC8
+    layout = "fop64"
+    SHORT_NAME = "FOP64"
+
+
 class FopExSig(_FopBase):
     """``SIGNATURE_TYPE_FOPEX`` (``0x89``) - extended file-offset code pattern."""
 
@@ -330,3 +344,15 @@ class FopExSig(_FopBase):
             "summary": self.describe(),
         })
         return details
+
+
+class FopEx64Sig(FopExSig):
+    """``SIGNATURE_TYPE_FOPEX64`` (``0xc9``) - 64-bit wildcard code pattern.
+
+    The on-disk payload is identical to :class:`FopExSig`; only the scanner
+    target (x64 code vs x86 code) differs.
+    """
+
+    SIG_TYPE_ID = 0xC9
+    layout = "fopex64"
+    SHORT_NAME = "FOPEX64"

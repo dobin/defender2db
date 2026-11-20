@@ -6,6 +6,8 @@ import unittest
 from defender2yara.defender.signature import (
     AsepFilePathSig,
     AsepFolderNameSig,
+    Fop64Sig,
+    FopEx64Sig,
     FopExSig,
     FopSig,
 )
@@ -138,6 +140,53 @@ class FopExTests(SignatureSnapshotMixin, unittest.TestCase):
     def test_router(self):
         sig = Vdm.decode_record(self.CUTWAIL, 0)
         self.assertIsInstance(sig, FopExSig)
+
+
+class Fop64Tests(SignatureSnapshotMixin, unittest.TestCase):
+    # Virus:Win64/Expiro.gen!AD: x64 literal fragment.
+    EXPIRO = bytes.fromhex(
+        "c8240000000020009055485648574141414148494c49494cbe4c494d4dc74449"
+        "4d44494c4cc7494d"
+    )
+
+    def test_fop64_literal_pattern(self):
+        sig = Fop64Sig(self.EXPIRO)
+        self.assertEqual(sig.sig_type, "SIGNATURE_TYPE_FOP64")
+        self.assertEqual(sig.layout, "fop64")
+        self.assertEqual(sig.pattern_length, 32)
+        self.assertEqual(sig.pattern[:4].hex(), "90554856")
+        self.assertEqual(sig.decode_warnings, [])
+        self.assertEqual(sig.decode_status, "decoded")
+        self.assertEqual(self.snapshot(sig)["layout"], "fop64")
+
+    def test_router(self):
+        sig = Vdm.decode_record(self.EXPIRO, 0)
+        self.assertIsInstance(sig, Fop64Sig)
+
+
+class FopEx64Tests(SignatureSnapshotMixin, unittest.TestCase):
+    # Virus:Win64/Expiro.A: x64 wildcard pattern with a 70-byte offset.
+    EXPIRO = bytes.fromhex(
+        "c935000000001e000d00000046004c4d4c4d4d494c4d4d49484c49e8484c4849"
+        "494c4d4d4d484c49e8c9e9c38b55a8489949f7fa4989c19000"
+    )
+
+    def test_fopex64_pattern(self):
+        sig = FopEx64Sig(self.EXPIRO)
+        self.assertEqual(sig.sig_type, "SIGNATURE_TYPE_FOPEX64")
+        self.assertEqual(sig.layout, "fopex64")
+        self.assertEqual(sig.prefix_length, 30)
+        self.assertEqual(sig.body_length, 13)
+        self.assertEqual(sig.suffix_length, 0)
+        self.assertEqual(sig.offset, 70)
+        self.assertTrue(sig.body.endswith(b"\x90\x00"))
+        self.assertEqual(sig.decode_warnings, [])
+        self.assertEqual(sig.decode_status, "decoded")
+        self.assertEqual(self.snapshot(sig)["offset"], 70)
+
+    def test_router(self):
+        sig = Vdm.decode_record(self.EXPIRO, 0)
+        self.assertIsInstance(sig, FopEx64Sig)
 
 
 class FopErrorTests(SignatureSnapshotMixin, unittest.TestCase):

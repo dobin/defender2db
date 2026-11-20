@@ -1,13 +1,15 @@
 # ASEP file paths and file-offset code patterns (FOP / FOPEX)
 
-Reverse-engineering notes for the last three "raw only" types in the shipped
-database that carry recognisable content:
+Reverse-engineering notes for the ASEP path records and the FOP code-pattern
+family, including the x64 variants:
 
 | type | id | payload | what it is |
 |------|----|--------:|------------|
 | `SIGNATURE_TYPE_ASEP_FILEPATH` | `0x71` | `u16 root + path` | `FILEPATH` condition evaluated at an auto-start extensibility point |
-| `SIGNATURE_TYPE_FOP` | `0x7f` | 4 B + name + bytes | literal x86/x64 file-offset code pattern |
-| `SIGNATURE_TYPE_FOPEX` | `0x89` | 10 B + name + 3 blocks | extended file-offset code pattern (wildcards + signed offset) |
+| `SIGNATURE_TYPE_FOP` | `0x7f` | 4 B + name + bytes | literal x86 file-offset code pattern |
+| `SIGNATURE_TYPE_FOPEX` | `0x89` | 10 B + name + 3 blocks | extended x86 code pattern (wildcards + signed offset) |
+| `SIGNATURE_TYPE_FOP64` | `0xc8` | same as FOP | literal x64 code pattern |
+| `SIGNATURE_TYPE_FOPEX64` | `0xc9` | same as FOPEX | extended x64 code pattern |
 
 Engine build: x64 `mpengine.dll` 1.1.26100.4 (base `0x180000000`).  Function
 notes were added to `cache/functions_vdm.md` section 23.  The related
@@ -19,11 +21,12 @@ Decoders:
 * `AsepFilePathSig` / `AsepFolderNameSig` in
   `defender2yara/defender/signature/pathname.py` (subclasses of
   `PathNameSig`).
-* `FopSig` / `FopExSig` in `defender2yara/defender/signature/fop.py`.
+* `FopSig` / `Fop64Sig` / `FopExSig` / `FopEx64Sig` in
+  `defender2yara/defender/signature/fop.py`.
 
 Wired into `Vdm.decode_record`; tests in `tests/test_signature_fop_asep.py`.
-All 1,191 ASEP_FILEPATH, 1,519 FOP and 2,806 FOPEX records in
-`cache/threats.db` decode with zero errors and zero warnings.
+All 1,191 ASEP_FILEPATH, 1,519 FOP, 2,806 FOPEX, 72 FOP64 and 65 FOPEX64
+records in `cache/threats.db` decode with zero errors and zero warnings.
 
 ---
 
@@ -107,9 +110,11 @@ same payload family covers:
 | `0xc6` | `MSILFOPEX` | .NET MSIL wildcard |
 
 The full FOP family is registered, but this database is dominated by the x86
-forms: `0x7f` (1,519 records), `0x89` (2,806), `0xc9` (55), `0xc8` (15),
-`0xba` MSILFOP (36) and `0xb4` VBFOP (2).  `VBFOPEX` (`0xc7`) and
-`MSILFOPEX` (`0xc6`) have no shipped records.
+forms: `0x7f` (1,519 records), `0x89` (2,806), `0xc8` FOP64 (72), `0xc9`
+FOPEX64 (65), `0xba` MSILFOP (143) and `0xb4` VBFOP (6).  The x64 variants use
+the same payloads and are decoded by `Fop64Sig` / `FopEx64Sig`.
+`VBFOPEX` (`0xc7`) has one record and `MSILFOPEX` (`0xc6`) has none; those are
+still raw.
 
 ### On-disk layout
 
@@ -188,6 +193,8 @@ FOPEX is the same idea with wildcards and a relative offset.
 | `ASEP_FILEPATH` `0x71` | 1,191 | 1,191 | 0 | identical to FILEPATH payload |
 | `FOP` `0x7f` | 1,519 | 790 | 729 (474 labels) | literal fragments; 132 contain literal 0x90 |
 | `FOPEX` `0x89` | 2,806 | 1,189 | 1,617 (1,096 labels) | 5 with a 1-byte suffix |
+| `FOP64` `0xc8` | 72 | 15 | 57 (35 labels) | x64 literal fragments, all flag 0 |
+| `FOPEX64` `0xc9` | 65 | 55 | 10 (9 labels) | x64 wildcard patterns, no suffix |
 
 The names identify packers/obfuscators and code-patch attributes:
 
@@ -207,7 +214,8 @@ A larger FOPEX example (`TrojanDropper:Win32/Cutwail.gen!C`) has prefix length
     body    90 02 06 "HeapAlloc" 00 90 03 02 04 ff 15 "SetT" 90 00
     offset  42
 
-Both types can be rendered as YARA hex (`??` per literal wildcard, `[n]` skips
-for FOPEX tokens), but no generator is wired up.  They are fingerprints of code
-that the emulator/unpacker sees, not of the raw scanned file, so a YARA rule
-would only be meaningful together with the same code-extraction context.
+Both x86 and x64 FOP forms can be rendered as YARA hex (`??` per literal
+wildcard, `[n]` skips for FOPEX tokens), but no generator is wired up.  They
+are fingerprints of code that the emulator/unpacker sees, not of the raw
+scanned file, so a YARA rule would only be meaningful together with the same
+code-extraction context.

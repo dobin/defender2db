@@ -48,7 +48,7 @@ Counts are actual signature records, unpacked from every `threatObject` blob (no
 | 34 | `SIGNATURE_TYPE_BOOT` | `0x44` | 1,203 | 0.02% | 1,131 | parsed (boot image pattern / CRC region) |
 | 35 | `SIGNATURE_TYPE_ASEP_FILEPATH` | `0x71` | 1,191 | 0.02% | 210 | parsed (CSIDL root + path/glob; ASEP variant) |
 | 36 | `SIGNATURE_TYPE_FOPEX` | `0x89` | 1,189 | 0.02% | 410 | parsed (literal prefix + wildcard code body + offset) |
-| 37 | `SIGNATURE_TYPE_PEBMPAT` | `0x95` | 955 | 0.01% | 352 | raw only / unimplemented |
+| 37 | `SIGNATURE_TYPE_PEBMPAT` | `0x95` | 955 | 0.01% | 352 | parsed (PEB/memory code pattern + name) |
 | 38 | `SIGNATURE_TYPE_MACHOHSTR_EXT` | `0x8D` | 952 | 0.01% | 927 | parsed (YARA) |
 | 39 | `SIGNATURE_TYPE_NDAT` | `0xA9` | 837 | 0.01% | 459 | parsed (typed data / regex + label) |
 | 40 | `SIGNATURE_TYPE_FOP` | `0x7F` | 790 | 0.01% | 468 | parsed (literal file-offset code pattern) |
@@ -56,15 +56,15 @@ Counts are actual signature records, unpacked from every `threatObject` blob (no
 | 42 | `SIGNATURE_TYPE_AUTOITHSTR_EXT` | `0xD3` | 576 | 0.01% | 523 | parsed (YARA) |
 | 43 | `SIGNATURE_TYPE_LUASTANDALONE` | `0xBD` | 452 | 0.01% | 405 | parsed (wrapper + Lua chunk + phase) |
 | 44 | `SIGNATURE_TYPE_JAVAHSTR_EXT` | `0xBF` | 342 | 0.01% | 186 | parsed (YARA) |
-| 45 | `SIGNATURE_TYPE_HOSTSENTRY` | `0x64` | 204 | 0.00% | 2 | raw only / unimplemented |
+| 45 | `SIGNATURE_TYPE_HOSTSENTRY` | `0x64` | 204 | 0.00% | 2 | parsed (address + host; hosts-file line) |
 | 46 | `SIGNATURE_TYPE_KPAT` | `0xBB` | 183 | 0.00% | 178 | parsed (8-byte anchor + literal/wildcard tail) |
-| 47 | `SIGNATURE_TYPE_POLYVIR32` | `0x21` | 151 | 0.00% | 148 | raw only / unimplemented |
+| 47 | `SIGNATURE_TYPE_POLYVIR32` | `0x21` | 151 | 0.00% | 148 | parsed (16-byte anchor + two CRC windows) |
 | 48 | `SIGNATURE_TYPE_KPATEX` | `0xBC` | 82 | 0.00% | 71 | parsed (8-byte anchor + wildcard-opcode tail) |
-| 49 | `SIGNATURE_TYPE_FOPEX64` | `0xC9` | 55 | 0.00% | 54 | raw only / unimplemented |
+| 49 | `SIGNATURE_TYPE_FOPEX64` | `0xC9` | 55 | 0.00% | 54 | parsed (x64 wildcard code pattern + offset) |
 | 50 | `SIGNATURE_TYPE_UNKNOWN` | `??` | 50 | 0.00% | 47 | raw only / unimplemented |
 | 51 | `SIGNATURE_TYPE_SNIDEX2` | `0xE6` | 49 | 0.00% | 2 | raw only / unimplemented |
 | 52 | `SIGNATURE_TYPE_MSILFOP` | `0xBA` | 36 | 0.00% | 31 | raw only / unimplemented |
-| 53 | `SIGNATURE_TYPE_FOP64` | `0xC8` | 15 | 0.00% | 13 | raw only / unimplemented |
+| 53 | `SIGNATURE_TYPE_FOP64` | `0xC8` | 15 | 0.00% | 13 | parsed (x64 literal code pattern) |
 | 54 | `SIGNATURE_TYPE_DEFAULTS` | `0x58` | 14 | 0.00% | 7 | raw only / unimplemented |
 | 55 | `SIGNATURE_TYPE_PUA_APPMAP` | `0xE8` | 8 | 0.00% | 8 | raw only / unimplemented |
 | 56 | `SIGNATURE_TYPE_VBFOP` | `0xB4` | 2 | 0.00% | 2 | raw only / unimplemented |
@@ -1028,8 +1028,9 @@ a file pattern.  No YARA generator is wired up for these three types.
 ## Fifteenth round: ASEP paths and file-offset code patterns (FOP / FOPEX)
 
 Full write-up: `doc/sigs/sig_decode_fop_asep.md`.  Engine notes were added to
-`cache/functions_vdm.md` §23.  All 1,191 `ASEP_FILEPATH`, 790 real-threat `FOP`
-and 1,189 real-threat `FOPEX` records decode with zero errors and zero warnings.
+`cache/functions_vdm.md` §23.  All 1,191 `ASEP_FILEPATH`, 1,519 `FOP`,
+2,806 `FOPEX`, 72 `FOP64` and 65 `FOPEX64` records decode with zero errors and
+zero warnings.
 
 ### `SIGNATURE_TYPE_ASEP_FILEPATH` (`0x71`)
 
@@ -1064,8 +1065,9 @@ file hashes.  The family is registered by `FUN_180b60a70` and parsed by
 `x64_fop_processor` (vftables `0x180c84870` / `0x180c84860`) run the match.
 `FOP` is a literal x86 fragment; `FOPEX` adds the engine wildcard language, a
 name, and a signed match offset.  The same layout family also covers `FOP64`
-(`0xc8`), `FOPEX64` (`0xc9`), `VB`p-code (`0xb4`/`0xc7`) and MSIL
-(`0xba`/`0xc6`).
+(`0xc8`, x64 literal, now decoded as `Fop64Sig`), `FOPEX64` (`0xc9`, x64
+wildcard, now decoded as `FopEx64Sig`), `VB`p-code (`0xb4`/`0xc7`) and MSIL
+(`0xba`/`0xc6`).  The VB/MSIL variants are still raw.
 
 `FOP` payload::
 
@@ -1104,6 +1106,8 @@ Coverage:
 | `ASEP_FILEPATH` `0x71` | 1,191 | 1,191 | 0 | FILEPATH payload, ASEP context |
 | `FOP` `0x7f` | 1,519 | 790 | 729 (474 labels) | literal fragments, 1,476 flag 0 / 43 flag 1 |
 | `FOPEX` `0x89` | 2,806 | 1,189 | 1,617 (1,096 labels) | 2,801 without suffix, 5 with 1-byte suffix |
+| `FOP64` `0xc8` | 72 | 15 | 57 (35 labels) | x64 literal fragments, all flag 0 |
+| `FOPEX64` `0xc9` | 65 | 55 | 10 (9 labels) | x64 wildcard patterns, all flag 0 / no suffix |
 
 `FOP` labels are packer/obfuscator names (`!ASprotect`, `!eXPressor`,
 `!UPX_LZMA2_3.00`, `!#FOP:Win32/Nuwar.unsafe`); `FOPEX` labels are code-patch
@@ -1116,11 +1120,107 @@ attributes and deep-analysis handlers
 * `FOPEX` Cutwail -> `55 8b 64 8b 25 2d 66 75 a3 8d 51 50` +
   `90 02 06 "HeapAlloc" 00 90 03 02 04 ff 15 "SetT" 90 00`, offset `42`
 
-Both FOP forms are expressible as YARA hex (`??` for literal wildcards, `[n]`
-skips for FOPEX tokens), but no generator is wired up.  Decoders: `AsepFilePathSig` /
-`AsepFolderNameSig` in `defender2yara/defender/signature/pathname.py` and
-`FopSig` / `FopExSig` in `defender2yara/defender/signature/fop.py`; wired into
-`Vdm.decode_record`; tests in `tests/test_signature_fop_asep.py`.
+Both x86 and x64 FOP forms are expressible as YARA hex (`??` for literal
+wildcards, `[n]` skips for FOPEX tokens), but no generator is wired up.
+Decoders: `AsepFilePathSig` / `AsepFolderNameSig` in
+`defender2yara/defender/signature/pathname.py` and `FopSig` / `Fop64Sig` /
+`FopExSig` / `FopEx64Sig` in `defender2yara/defender/signature/fop.py`; wired
+into `Vdm.decode_record`; tests in `tests/test_signature_fop_asep.py`.
+
+## Sixteenth round: PEB patterns, hosts-file entries and POLYVIR32
+
+Full write-up: `doc/sigs/sig_decode_pebm_hosts_polyvir.md`.  Engine notes were
+added to `cache/functions_vdm.md` §24.  These were the last three types in the
+ranking that were still raw-only.
+
+### `SIGNATURE_TYPE_PEBMPAT` (`0x95`)
+
+A **PEB/memory code pattern**, not a file hash or a file offset.  The payload
+uses the same container as `FOP` but the pattern language of `FOPEX`::
+
+    u8  flags            bit 0 = hit/report class
+    u8  name_length      0 = anonymous
+    u16 pattern_length
+    u8  name[name_length]
+    u8  pattern[pattern_length]   literal code + 90 wildcard tokens
+                                  (always ends 90 00)
+
+The parser (`FUN_1802b0c10`) enforces `flags & 0xfe == 0`, the exact length
+`4 + name + pattern`, and at least four literal bytes before the first `0x90`
+token.  It is registered by a static 0x30-byte descriptor
+(`PTR_FUN_1810d4af0`) installed by the `PEBMPat` module init
+(`FUN_1804f4e80`); the scan driver is `FUN_1801176e0` (Aho-Corasick anchor +
+`FUN_1801167ac` wildcard verification).  Names are the usual feed/aggregator
+labels (`!#PEBMPAT:...`, `!#attrmatch_codepatch_EIP_...`,
+`!FakeXPA_Obfuscator`), never the owner threat name.
+
+Coverage: 2,711 records — 955 anonymous real-threat records (352 threats) and
+1,756 named infrastructure records (1,109 labels).  Patterns are 6..177 bytes,
+median 33; all end in `90 00`; 66 records set flag bit 0.
+
+### `SIGNATURE_TYPE_HOSTSENTRY` (`0x64`)
+
+A **hosts-file line condition**, evaluated against the parsed `hosts` file
+(`VFS:hosts` scan), not against the scanned file bytes::
+
+    u8  address_length    includes the trailing NUL, must be > 1
+    u8  address[address_length]
+    u8  host_length       includes the trailing NUL, must be > 1
+    u8  host[host_length]
+
+`FUN_180474f90` validates both NUL-terminated strings and builds the record id
+`crc32(payload) | 0x64 << 32 | size << 40`.  The matcher `FUN_180448360`
+hashes the host, looks it up in the exact table `DAT_1811231d8`, and requires
+the stored address hash to match (or the `NULL` sentinel).  Hosts beginning
+with `*.` go to the wildcard table `DAT_1811231e0` and are matched by suffix.
+The type is registered by the `kcrce` module init next to KCRCE/KCRCEX.
+
+Coverage: 204 records, all owned by `SettingsModifier:Win32/HostsFileHijack`
+(149) or `.../PossibleHostsFileHijack` (55).  Addresses are `NULL` (195),
+`0.0.0.0` (6) and `127.0.0.1` (3); 71 distinct hosts, e.g.
+`NULL microsoft.com` and `0.0.0.0 v4.windowsupdate.microsoft.com`.  Wildcards
+are supported by the engine but unused in this DB.
+
+### `SIGNATURE_TYPE_POLYVIR32` (`0x21`)
+
+A **polymorphic-virus code fingerprint**: a 16-byte literal anchor plus the
+CRC-32 of two windows whose offsets are relative to the anchor start::
+
+    u8  anchor[16]        literal code fragment
+    u16 window1_offset    relative to the anchor start
+    u16 window1_length
+    u32 window1_crc       Defender CRC-32 (init 0xffffffff, no final xor)
+    u16 window2_offset
+    u16 window2_length
+    u32 window2_crc
+    u16 extra_length      optional blob (0 in every shipped record)
+    u8  extra[extra_length]
+    ...                   optional name (none in this DB)
+
+The type is not registered by a hand-written parser: the HSTR module init
+registers it as a generic **template table** (`FUN_1804eae94(...,
+0x421)`), and the template `0x180f07470` describes the fields above.  The
+matcher is the shared multi-pattern matcher `FUN_180047590`: it compares the
+16-byte anchor ending at the match position, then verifies
+`CRC32(buf[base+off1 : base+off1+len1]) == crc1` and the same for window 2,
+where `base = match_position - 15`.  A special EUS-style name is reported
+after window 1 (`FUN_18015fe38` / `FUN_180154640`); ordinary records require
+both windows.
+
+Coverage: 151 records (148 threats), all anonymous, 133 distinct anchors.
+Legacy families: `Godog`, `Bofra`, `Bugbear`, `Bagle`, `ASK.*`, `CTX.*`,
+`Leviathan`, `Hybris`, `Magistr`, `Aliz`, `Gain`, `Savior`, `Priest`.  Window
+offsets are small (0x00/0x10/0x20/0x30/0x40 dominate); lengths are mostly
+0x10..0x200, confirming that the windows describe code immediately around the
+anchor.
+
+Decoders: `PebmPatSig` in `defender2yara/defender/signature/pebmpat.py`,
+`HostsEntrySig` in `hostsentry.py` and `Polyvir32Sig` in `polyvir32.py`;
+wired into `Vdm.decode_record`; tests in
+`tests/test_signature_pebm_hosts_polyvir.py`.  All 3,066 records decode with
+zero errors and zero warnings.  None of the three feeds YARA generation:
+PEBMPAT and POLYVIR32 are emulator/memory code fingerprints, and HOSTSENTRY
+describes a hosts-file line rather than file bytes.
 
 ## Aggregate pseudo-threat records
 

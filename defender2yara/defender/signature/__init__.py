@@ -43,4 +43,9 @@ from defender2yara.defender.signature.regkey import RegKeySig
 from defender2yara.defender.signature.ndat import NdatSig
 from defender2yara.defender.signature.boot import BootSig
 from defender2yara.defender.signature.brute import BruteSig
-from defender2yara.defender.signature.fop import FopSig, FopExSig
+from defender2yara.defender.signature.fop import (
+    Fop64Sig, FopEx64Sig, FopExSig, FopSig,
+)
+from defender2yara.defender.signature.pebmpat import PebmPatSig
+from defender2yara.defender.signature.hostsentry import HostsEntrySig
+from defender2yara.defender.signature.polyvir32 import Polyvir32Sig
