@@ -43,6 +43,8 @@ SIGNATURE_TEMPLATES = {
     'CKOLDREC': 'signatures/ckrecord.html',
     'FILEPATH': 'signatures/pathname.html',
     'FOLDERNAME': 'signatures/pathname.html',
+    'VDLL_X86': 'signatures/vdll.html',
+    'VDLL_X64': 'signatures/vdll.html',
 }
 
 SIGNATURE_DESCRIPTIONS_PATH = Path(__file__).parent / 'static' / 'sigs' / 'signatures.json'

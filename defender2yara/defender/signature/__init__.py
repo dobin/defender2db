@@ -37,3 +37,4 @@ from defender2yara.defender.signature.versioncheck import VersionCheckSig
 from defender2yara.defender.signature.kpat import (
     KPAT_SIGS, KpatExSig, KpatSig,
 )
+from defender2yara.defender.signature.vdll import VDLL_SIGS, VdllSig

@@ -793,6 +793,29 @@ expressible in YARA hex; the decoder renders `pattern_hex` (`??`, `[n]`,
 `KpatSig` / `KpatExSig` in `defender2yara/defender/signature/kpat.py`,
 wired into `Vdm.decode_record`; tests in `tests/test_signature_kpat.py`.
 
+## Twelfth round: VDLL virtual DLL images
+
+Full write-up: `doc/sigs/sig_decode_vdll.md`.  User-facing page:
+`app/static/sigs/SIG_VDLL.md`.  Decoder: `VdllSig` in
+`defender2yara/defender/signature/vdll.py`; tests in
+`tests/test_signature_vdll.py`.
+
+`SIGNATURE_TYPE_VDLL_X86` (`0x79`) and `SIGNATURE_TYPE_VDLL_X64` (`0x7c`)
+are not fingerprints: the TLV payload is a complete PE DLL image starting
+directly with `MZ`.  They are the emulator's "virtual DLLs"; the export
+directory name is the Windows module being emulated (`MSHTML.DLL`,
+`LZ32.DLL`, `BASESRV.DLL`, `api-ms-win-core-*.dll`, …) and the exports are
+the API entry points.
+
+There are 945 records in `!InfrastructureShared` (750 x86, 195 x64;
+54.2 MB, 36% of the bucket's bytes).  They contain 135,017 exports, 33,257 of
+them forwarded, and 7,311 imports.  All 945 payloads now decode as PE32/PE32+
+DLLs with the expected machine (`0x14c` / `0x8664`).  This closes the last
+large undecoded region of `!InfrastructureShared`.
+
+VDLL_META (`0xb5` / `0xe1`) records remain opaque; they are not needed to
+parse an image, because the PE itself carries the module name and API surface.
+
 ## Aggregate pseudo-threat records
 
 These rows are Microsoft infrastructure buckets, not detections. They are excluded above 

@@ -100,9 +100,14 @@ By bytes: **VDLL images 36%**, Lua 17%, SNID 13%, NSCRIPT_BRUTE 10%.
 
 ### Decode coverage
 
-- 877,582 decoded, 2,199 partial, 32,179 unsupported.
+- 877,582 decoded, 2,199 partial, 32,179 unsupported (counts from the import
+  made before the VDLL decoder described below).
 - Unsupported records account for **69.3 MB (46% of the pool's bytes)**, mostly
-  VDLL_X86/X64 (54.2 MB). VDLL is the main decode blind spot.
+  VDLL_X86/X64 (54.2 MB).
+- The VDLL decoder now parses all 945 images (`doc/sigs/sig_decode_vdll.md`), so
+  a re-import removes that 54.2 MB from the unsupported set.  What remains is
+  mostly DBVAR (5.2 MB) plus a few rare types; VDLL_META (`0xb5`/`0xe1`) is
+  small and still opaque.
 
 ### Real detections vs pseudo-threats
 

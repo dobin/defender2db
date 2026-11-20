@@ -109,5 +109,13 @@
   "KPATEX": {
     "description": "An extended key pattern: the same literal 8-byte anchor plus a pattern using the engine's 0x90 wildcard language (skips, ranges, byte classes).",
     "detail": "SIG_KPAT.md"
+  },
+  "VDLL_X86": {
+    "description": "A 32-bit virtual DLL: a complete PE image used by Defender's emulator to intercept calls to an emulated Windows module. The export name identifies the module.",
+    "detail": "SIG_VDLL.md"
+  },
+  "VDLL_X64": {
+    "description": "A 64-bit virtual DLL: a complete PE image used by Defender's emulator to intercept calls to an emulated Windows module. The export name identifies the module.",
+    "detail": "SIG_VDLL.md"
   }
 }

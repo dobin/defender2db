@@ -1,0 +1,67 @@
+{% set d = sig.details %}
+<dl>
+  <dt>Emulated module</dt>
+  <dd><code>{{ d.get('module_name') or 'Unknown' }}</code></dd>
+  <dt>Image</dt>
+  <dd>{{ d.get('pe_format') }} {{ d.get('machine_label') }} DLL, {{ d.get('payload_size') }} bytes</dd>
+  {% if d.get('timestamp_iso') %}
+  <dt>Timestamp</dt><dd>{{ d.get('timestamp_iso') }}</dd>
+  {% endif %}
+  <dt>Image base / entry point</dt>
+  <dd><code>{{ d.get('image_base')|hexnum(8) }}</code> / <code>{{ d.get('entry_point')|hexnum(8) }}</code></dd>
+  <dt>Exports / imports</dt>
+  <dd>{{ d.get('export_count') }} exports{% if d.get('forwarders') %} ({{ d.get('forwarders')|length }} forwarded){% endif %}, {{ d.get('import_count') }} imports</dd>
+  {% if d.get('imported_modules') %}
+  <dt>Imported modules</dt><dd>{{ d.get('imported_modules')|join(', ') }}</dd>
+  {% endif %}
+  <dt>Payload SHA-256</dt><dd><code>{{ d.get('payload_sha256') }}</code></dd>
+</dl>
+
+{% if d.get('decode_warnings') %}
+<div class="alert alert-warning">
+  {% for warning in d.get('decode_warnings') %}<div>{{ warning }}</div>{% endfor %}
+</div>
+{% endif %}
+
+{% if d.get('sections') %}
+<h4>Sections</h4>
+<table class="table table-sm table-bordered">
+  <thead><tr><th>Name</th><th>Virtual address</th><th>Virtual size</th><th>Raw size</th><th>Characteristics</th></tr></thead>
+  <tbody>
+  {% for section in d.get('sections', []) %}
+    <tr>
+      <td><code>{{ section.get('name') }}</code></td>
+      <td><code>{{ section.get('virtual_address')|hexnum(8) }}</code></td>
+      <td>{{ section.get('virtual_size') }}</td>
+      <td>{{ section.get('raw_size') }}</td>
+      <td><code>{{ section.get('characteristics')|hexnum(8) }}</code></td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+{% if d.get('exports') %}
+<details>
+  <summary>Exports ({{ d.get('export_count') }})</summary>
+  <table class="table table-sm table-bordered">
+    <thead><tr><th>Name</th><th>Forwarder</th></tr></thead>
+    <tbody>
+    {% for name in d.get('exports', [])[:200] %}
+      <tr>
+        <td><code>{{ name }}</code></td>
+        <td>{% set target = d.get('forwarders', {}).get(name) %}{% if target %}<code>{{ target }}</code>{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% if d.get('export_count', 0) > 200 %}
+  <p class="text-muted small">Showing the first 200 exports; the JSON view lists all of them.</p>
+  {% endif %}
+</details>
+{% endif %}
+
+<p class="text-muted small">
+  A VDLL is a virtual DLL used by Defender's emulator. The exported names are
+  API entry points for the emulated module, not a malware pattern.
+</p>
