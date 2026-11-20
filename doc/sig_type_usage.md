@@ -44,13 +44,13 @@ Counts are actual signature records, unpacked from every `threatObject` blob (no
 | 30 | `SIGNATURE_TYPE_ELFHSTR_EXT` | `0x8C` | 1,944 | 0.03% | 1,905 | parsed (YARA) |
 | 31 | `SIGNATURE_TYPE_NID64` | `0xCE` | 1,919 | 0.03% | 1,522 | parsed (id/kind/name + packed record id) |
 | 32 | `SIGNATURE_TYPE_CKOLDREC` | `0x11` | 1,740 | 0.03% | 1,000 | parsed (two CRC-32 regions + flags + name) |
-| 33 | `SIGNATURE_TYPE_BRUTE` | `0xD0` | 1,725 | 0.03% | 96 | raw only / unimplemented |
-| 34 | `SIGNATURE_TYPE_BOOT` | `0x44` | 1,203 | 0.02% | 1,131 | raw only / unimplemented |
+| 33 | `SIGNATURE_TYPE_BRUTE` | `0xD0` | 1,725 | 0.03% | 96 | parsed (generic script brute pattern) |
+| 34 | `SIGNATURE_TYPE_BOOT` | `0x44` | 1,203 | 0.02% | 1,131 | parsed (boot image pattern / CRC region) |
 | 35 | `SIGNATURE_TYPE_ASEP_FILEPATH` | `0x71` | 1,191 | 0.02% | 210 | raw only / unimplemented |
 | 36 | `SIGNATURE_TYPE_FOPEX` | `0x89` | 1,189 | 0.02% | 410 | raw only / unimplemented |
 | 37 | `SIGNATURE_TYPE_PEBMPAT` | `0x95` | 955 | 0.01% | 352 | raw only / unimplemented |
 | 38 | `SIGNATURE_TYPE_MACHOHSTR_EXT` | `0x8D` | 952 | 0.01% | 927 | parsed (YARA) |
-| 39 | `SIGNATURE_TYPE_NDAT` | `0xA9` | 837 | 0.01% | 459 | raw only / unimplemented |
+| 39 | `SIGNATURE_TYPE_NDAT` | `0xA9` | 837 | 0.01% | 459 | parsed (typed data / regex + label) |
 | 40 | `SIGNATURE_TYPE_FOP` | `0x7F` | 790 | 0.01% | 468 | raw only / unimplemented |
 | 41 | `SIGNATURE_TYPE_ARHSTR_EXT` | `0xC5` | 622 | 0.01% | 457 | parsed (YARA) |
 | 42 | `SIGNATURE_TYPE_AUTOITHSTR_EXT` | `0xD3` | 576 | 0.01% | 523 | parsed (YARA) |
@@ -902,6 +902,128 @@ Examples: `HKCU\Software\kuum` (existence),
 Decoders: `Kvir32Sig` in `defender2yara/defender/signature/kvir32.py` and
 `RegKeySig` in `defender2yara/defender/signature/regkey.py`.  Wired into
 `Vdm.decode_record`; tests in `tests/test_signature_kvir_regkey.py`.
+
+## Fourteenth round: NDAT typed strings, generic BRUTE and BOOT images
+
+Full write-up: `doc/sigs/sig_decode_ndat_brute_boot.md`.  Engine notes were
+added to `cache/functions_vdm.md` §22.  These were the last three types that
+still contained matchable/typed content but were only stored as raw records.
+
+All 7,781 NDAT, 5,703 BRUTE and 1,217 BOOT records decode with zero errors and
+zero warnings.
+
+### `SIGNATURE_TYPE_NDAT` (`0xa9`)
+
+A **typed named-data record**, not a file fingerprint::
+
+    u32 data_length
+    u8  data[data_length]    # NUL included for strings, raw bytes for RKPAT/regex
+    u8  type                 # NDAT class 1..23
+    u8  label[]              # optional NUL-terminated feed label (!#NRI:..., #NoApiCallCounting)
+
+The record is parsed by the generic template interpreter
+(`FUN_180181cc4`, template `0x180f073e0`) registered by the `cksig` module as
+type `0x4a9` (`0x400 | 0xa9`).  The 0x18-byte table entry is
+`{u32 data_len, u32 condition_id, ptr data, u8 type}`; the commit callback
+`FUN_180280ab0` dispatches on the type byte through `DAT_181115430`.
+
+The first 14 NDAT names are in `0x180c77f98` and the enum is one-based:
+1 `PROJECTPATH_REGEX`, 2 `PROJECTNAME_REGEX`, 3 `DONTCOUNT_API`, 4
+`FIRE_EVENT`, 5 `LOGSKIP_ENTRY`, 6 `VFS_LINK`, 7 `API_ATTRIBUTE`, 8 `RKPAT`,
+9 `EBHASHDATA`, 10 `PDBPATH_REGEX`, 11 `PDBNAME_REGEX`, 12
+`INCLUDE_DNS_CACHE_INFO`, 13 `REGEXP_GENERIC`, 14 `DBTAG`.  Types 15..23 are
+the NRI/AIMCP classes: domain, HTTP-header, generic regexp, certificate
+subject, response/body, certificate bytes, LSASS audit rule, `RtpSkipRuleEx`
+(22) and transport (23).
+
+The engine registers `RtpSkipRule` for type 5 and `RtpSkipRuleEx` for type 22;
+`NdatRegExpMatch` only accepts type 13.  `FUN_18024ff68` compares a record's
+string with a candidate, and `FUN_180b1e590` implements the
+`NdatRegExpMatch <type 13> <regex>` definition command over the
+NUL-terminated vector `DAT_181123f88`.
+
+Coverage: 7,781 records, 3,360 labelled / 4,421 anonymous, 99.8% textual, data
+length 1..3,345 (median 39).  Real-threat usage is dominated by VBA project
+paths (`PROJECTPATH`, 368), PDB paths (753) and the Alureon/Sirefef raw code
+patterns (`RKPAT`, 33); the rest are shared infrastructure tables
+(`LOGSKIP_ENTRY` 3,584, `DONTCOUNT_API` 969, `VFS_LINK` 1,215, NRI domain 264,
+cert subject 278, ...).
+
+Examples: `MSVCRT.DLL!cos` (`#NoApiCallCounting`),
+`*.VHDX.|*|Microsoft-Hyper-V`, `C:\WINDOWS\SYSTEM32\MFC71.DLL>...\MFC42.DLL`,
+`^Subject: CN=aaatus\.com`, `AUDIT_M1:9e6c4e1f-...`, `slootni.com`.
+
+### `SIGNATURE_TYPE_BRUTE` (`0xd0`)
+
+The **generic script brute pattern**: the exact `NSCRIPT_BRUTE` (`0x29`)
+payload (name, kind byte, mode, `any_length`, wildcard pattern ending `90 00`)
+but stored in a separate, script-type-agnostic table.  The record sets are
+disjoint (no `0xd0` payload duplicates a `0x29` payload).
+
+`0xd0` is registered by the **kcrce module** (`FUN_180927150` ->
+`FUN_180927754`), not by `nscript`: parser `FUN_1801828c0`, table tag `brut`
+(`0x62727574`), commit `FUN_180517e50` (builds a dedicated Aho-Corasick matcher
+`DAT_1811152c8`), driver `FUN_180517568`.  The in-memory entry is
+`{pattern ptr, condition id, anchor offset/length, any_length, pattern_length,
+mode, kind, variant, high flag}`.
+
+Coverage: 5,703 records, 3,978 labelled / 1,725 anonymous; **all use script
+kind 0 ("any")**; mode anywhere 4,405, forward 1,041, backward 257;
+`any_length` unset in 5,649; pattern length 6..1,539 (median 25); 2,404
+patterns contain wildcard tokens.  These are the patterns behind the
+`BRUTE:JS:Feature:` / `BRUTE:VBS:Feature:` / `BRUTE:PDF:Feature:` features and
+the `mp.GetBruteMatchData()` / `mp.ReadBruteMatchBuffer()` Lua API.  Example:
+`!#SCPT:AICustomDiscovery.ClaudeAgentSDKPy` -> `ClaudeAgentOptions`.
+
+### `SIGNATURE_TYPE_BOOT` (`0x44`)
+
+The **boot image signature** used by the MBR/VBR/boot-sector scanner::
+
+    u8 name_length           0 = anonymous
+    u8 name[name_length]     feed label (!#BOOT:..., !#TEL:...)
+    u8 blob[32]
+
+Normal form (`blob[0]` = 4..31): `u8 pattern_length; u8 pattern[31]` (the rest
+is zero padding).  The first four bytes are compared as a dword; the remainder
+is compared byte-wise with `0x90` as a single-byte wildcard.
+
+CRC form (`blob[0] == 0x20`): `u8 0x20; u8 0; u8 anchor[8]; u16
+covered_length; u32 crc32; padding[15]`.  The matcher matches the 8-byte
+anchor and then compares the Defender CRC-32 of `[match, match +
+covered_length)`.
+
+The type is registered by the `BootImgs` module init `FUN_180ac2ca0` (table
+`DAT_181115d10`, 0x24-byte entries, template `0x180f39560`, type `0x544`).
+`FUN_18015da40` is the matcher (byte-index prefilter, normal or CRC form);
+`FUN_1800f95a0` scans `0x800`-aligned sectors up to `0x40000` and calls it on
+the first `0xc0` bytes, `FUN_1800fb080` adds the boot memory-stealth path and
+`FUN_180363558` the boot verification path (`MpInternal_bootsigoffset=%lld` /
+the `bootsigoffset` report field).
+
+Coverage: 1,217 records, 979 normal / 238 CRC form, 14 labelled / 1,203
+anonymous; normal pattern length 4..31 (31: 268, 30: 112), 112 patterns with
+wildcards; CRC covered length 14..300 (median 56).  Examples:
+`Virus:DOS/Half` (30-byte literal), `Virus:DOS/MpTestBoot` (wildcards),
+`Virus:DOS/3nop` (anchor `909090fa33c08ed8`, length 42, crc32 `63fd44a8`),
+`!#TEL:Ransom:DOS/Petya.A` (31-byte pattern).
+
+### Coverage
+
+| type | records | decoded | named | notes |
+|------|--------:|--------:|------:|-------|
+| `NDAT` `0xa9` | 7,781 | 7,781 | 3,360 | typed data, 13 classes + NRI classes |
+| `BRUTE` `0xd0` | 5,703 | 5,703 | 3,978 | generic script brute, kind "any" only |
+| `BOOT` `0x44` | 1,217 | 1,217 | 14 | 979 patterns + 238 CRC regions |
+
+Decoders: `NdatSig` in `defender2yara/defender/signature/ndat.py`, `BruteSig`
+in `defender2yara/defender/signature/brute.py` (subclass of
+`NscriptBruteSig`) and `BootSig` in
+`defender2yara/defender/signature/boot.py`.  Wired into
+`Vdm.decode_record`; tests in `tests/test_signature_ndat_boot_brute.py`.
+
+`BRUTE` and `BOOT` contain inline patterns and are expressible in YARA
+(`??` per wildcard; `[n]` skips for BRUTE).  `NDAT` is a condition string, not
+a file pattern.  No YARA generator is wired up for these three types.
 
 ## Aggregate pseudo-threat records
 

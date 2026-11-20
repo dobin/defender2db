@@ -40,3 +40,6 @@ from defender2yara.defender.signature.kpat import (
 from defender2yara.defender.signature.vdll import VDLL_SIGS, VdllSig
 from defender2yara.defender.signature.kvir32 import Kvir32Sig
 from defender2yara.defender.signature.regkey import RegKeySig
+from defender2yara.defender.signature.ndat import NdatSig
+from defender2yara.defender.signature.boot import BootSig
+from defender2yara.defender.signature.brute import BruteSig

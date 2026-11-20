@@ -207,6 +207,12 @@ class Vdm:
             entry = Kvir32Sig(data,ptr)
         elif sig_type == "SIGNATURE_TYPE_REGKEY":
             entry = RegKeySig(data,ptr)
+        elif sig_type == "SIGNATURE_TYPE_NDAT":
+            entry = NdatSig(data,ptr)
+        elif sig_type == "SIGNATURE_TYPE_BOOT":
+            entry = BootSig(data,ptr)
+        elif sig_type == "SIGNATURE_TYPE_BRUTE":
+            entry = BruteSig(data,ptr)
         else:
             entry = BaseSig(data,ptr)
         return entry

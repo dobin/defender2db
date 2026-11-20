@@ -480,6 +480,9 @@ class NscriptSpSig(BaseSig):
 class NscriptBruteSig(BaseSig):
     """SIGNATURE_TYPE_NSCRIPT_BRUTE (0x29) — script string brute pattern.
 
+    The same payload layout is also used by the generic ``SIGNATURE_TYPE_BRUTE``
+    (``0xd0``) record; see :class:`defender2yara.defender.signature.brute.BruteSig`.
+
     Layout::
 
         u8   name_length      0..0x3f (0 = no inline name)
@@ -502,9 +505,12 @@ class NscriptBruteSig(BaseSig):
     ``90 1b`` token (i.e. it is contiguous and can be matched as-is).
     """
 
+    SIG_TYPE_ID = 0x29
+    SHORT_NAME = "NSCRIPT_BRUTE"
+
     def __init__(self, data: bytes, ptr: int = 0) -> None:
         self.parse_common_header(data, ptr)
-        assert self.sig_type == SIG_TYPES[0x29]
+        assert self.sig_type == SIG_TYPES[self.SIG_TYPE_ID]
 
         raw_name, self.name, base = _read_name(self.sig_data, 0x3F)
         if len(self.sig_data) < base + 10:
@@ -590,7 +596,7 @@ class NscriptBruteSig(BaseSig):
 
     def describe(self) -> str:
         text = (
-            f"NSCRIPT_BRUTE {self.script_type} mode={self.mode} "
+            f"{self.SHORT_NAME} {self.script_type} mode={self.mode} "
             f"len={self.pattern_length} {self.pattern_text!r}"
         )
         if self.name_length:

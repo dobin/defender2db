@@ -125,5 +125,17 @@
   "REGKEY": {
     "description": "A registry condition: a hive, a key path, an optional value name and optional expected value data. It is evaluated against the live registry, not against file bytes.",
     "detail": "SIG_REGKEY.md"
+  },
+  "NDAT": {
+    "description": "A typed named-data record: an ASCII/binary blob plus an NDAT class byte. It is a condition string (path, regex, API name, domain, certificate subject, code bytes) consumed by other modules, not a file pattern.",
+    "detail": "SIG_NDAT.md"
+  },
+  "BRUTE": {
+    "description": "A generic script brute pattern: the same readable, wildcarded script text as NSCRIPT_BRUTE but stored in a script-type-agnostic table.",
+    "detail": "SIG_BRUTE.md"
+  },
+  "BOOT": {
+    "description": "A boot image signature: a byte pattern for MBR/VBR/boot sectors, or an 8-byte anchor plus the length and CRC-32 of the covered region.",
+    "detail": "SIG_BOOT.md"
   }
 }
