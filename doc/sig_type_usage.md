@@ -46,12 +46,12 @@ Counts are actual signature records, unpacked from every `threatObject` blob (no
 | 32 | `SIGNATURE_TYPE_CKOLDREC` | `0x11` | 1,740 | 0.03% | 1,000 | parsed (two CRC-32 regions + flags + name) |
 | 33 | `SIGNATURE_TYPE_BRUTE` | `0xD0` | 1,725 | 0.03% | 96 | parsed (generic script brute pattern) |
 | 34 | `SIGNATURE_TYPE_BOOT` | `0x44` | 1,203 | 0.02% | 1,131 | parsed (boot image pattern / CRC region) |
-| 35 | `SIGNATURE_TYPE_ASEP_FILEPATH` | `0x71` | 1,191 | 0.02% | 210 | raw only / unimplemented |
-| 36 | `SIGNATURE_TYPE_FOPEX` | `0x89` | 1,189 | 0.02% | 410 | raw only / unimplemented |
+| 35 | `SIGNATURE_TYPE_ASEP_FILEPATH` | `0x71` | 1,191 | 0.02% | 210 | parsed (CSIDL root + path/glob; ASEP variant) |
+| 36 | `SIGNATURE_TYPE_FOPEX` | `0x89` | 1,189 | 0.02% | 410 | parsed (literal prefix + wildcard code body + offset) |
 | 37 | `SIGNATURE_TYPE_PEBMPAT` | `0x95` | 955 | 0.01% | 352 | raw only / unimplemented |
 | 38 | `SIGNATURE_TYPE_MACHOHSTR_EXT` | `0x8D` | 952 | 0.01% | 927 | parsed (YARA) |
 | 39 | `SIGNATURE_TYPE_NDAT` | `0xA9` | 837 | 0.01% | 459 | parsed (typed data / regex + label) |
-| 40 | `SIGNATURE_TYPE_FOP` | `0x7F` | 790 | 0.01% | 468 | raw only / unimplemented |
+| 40 | `SIGNATURE_TYPE_FOP` | `0x7F` | 790 | 0.01% | 468 | parsed (literal file-offset code pattern) |
 | 41 | `SIGNATURE_TYPE_ARHSTR_EXT` | `0xC5` | 622 | 0.01% | 457 | parsed (YARA) |
 | 42 | `SIGNATURE_TYPE_AUTOITHSTR_EXT` | `0xD3` | 576 | 0.01% | 523 | parsed (YARA) |
 | 43 | `SIGNATURE_TYPE_LUASTANDALONE` | `0xBD` | 452 | 0.01% | 405 | parsed (wrapper + Lua chunk + phase) |
@@ -1024,6 +1024,103 @@ in `defender2yara/defender/signature/brute.py` (subclass of
 `BRUTE` and `BOOT` contain inline patterns and are expressible in YARA
 (`??` per wildcard; `[n]` skips for BRUTE).  `NDAT` is a condition string, not
 a file pattern.  No YARA generator is wired up for these three types.
+
+## Fifteenth round: ASEP paths and file-offset code patterns (FOP / FOPEX)
+
+Full write-up: `doc/sigs/sig_decode_fop_asep.md`.  Engine notes were added to
+`cache/functions_vdm.md` §23.  All 1,191 `ASEP_FILEPATH`, 790 real-threat `FOP`
+and 1,189 real-threat `FOPEX` records decode with zero errors and zero warnings.
+
+### `SIGNATURE_TYPE_ASEP_FILEPATH` (`0x71`)
+
+This is **the same payload as `FILEPATH` (`0x5f`)**: a `u16` CSIDL/pseudo-root
+id followed by a case-insensitive relative path or glob (no NUL terminator).
+The resmgr plugin (`FUN_180939aa0`) registers four builders that share the
+parser/commit logic in `FUN_1802b378c`:
+
+| type | builder | meaning |
+|------|---------|---------|
+| `0x5f` `FILEPATH` | `FUN_1802b3690` | file path/glob condition |
+| `0x71` `ASEP_FILEPATH` | `FUN_1802b3590` | same path at an ASEP (auto-start extensibility point) |
+| `0x60` `FOLDERNAME` | `FUN_1802b39c0` | directory path/glob condition |
+| `0x75` `ASEP_FOLDERNAME` | `FUN_18093a1a0` | same directory at an ASEP |
+
+The builder computes `crc32(payload) | type << 32 | size << 40` and emits the
+TLV with `FUN_180217edc`.  The ASEP context is therefore a type id, not extra
+payload: the same `%SystemRoot%\System32\ftpudp.exe` path can be a plain file
+condition or an ASEP check.  The engine's ASEP configuration strings
+(`MpExtraAsepScanLocations`, `MP_EXTRA_ASEP_SCAN_LOCATIONS`) confirm the
+auto-start meaning.  `ASEP_FOLDERNAME` has no shipped records.
+
+Examples: `ASEP_FILEPATH %SystemRoot%\System32\ftpudp.exe` (Worm:Win32/Korgo.AY),
+`ASEP_FILEPATH %windir%\system\eschlp.exe` (Worm:Win32/Msblast.F).  Top owners
+are browser modifiers/adware (`Hotbar`, `CnsMin`, `C2Lop`) and ASP webshells.
+
+### `SIGNATURE_TYPE_FOP` (`0x7f`) and `FOPEX` (`0x89`)
+
+These are **file-offset code patterns** used by the emulator/code scanner, not
+file hashes.  The family is registered by `FUN_180b60a70` and parsed by
+`FUN_1802b10b4`; `FopScanner::x86_fop_processor` /
+`x64_fop_processor` (vftables `0x180c84870` / `0x180c84860`) run the match.
+`FOP` is a literal x86 fragment; `FOPEX` adds the engine wildcard language, a
+name, and a signed match offset.  The same layout family also covers `FOP64`
+(`0xc8`), `FOPEX64` (`0xc9`), `VB`p-code (`0xb4`/`0xc7`) and MSIL
+(`0xba`/`0xc6`).
+
+`FOP` payload::
+
+    u8  flags            bit 0 only (0/1 observed)
+    u8  name_length
+    u16 pattern_length
+    u8  name[name_length]      feed label, not NUL terminated
+    u8  pattern[pattern_length] literal bytes (0x90 is a NOP, not a wildcard)
+
+`FOPEX` payload::
+
+    u8  flags            bit 0 only
+    u8  name_length
+    u16 prefix_length    literal code block
+    u16 body_length      wildcard pattern block (always ends 90 00)
+    u16 suffix_length    optional extra block (0 or 1 observed)
+    i16 offset           signed match offset (-480..1064 observed)
+    u8  name[name_length]
+    u8  prefix[prefix_length]
+    u8  body[body_length]
+    u8  suffix[suffix_length]
+
+The parser validates the exact total length and runs the wildcard validator
+`FUN_1802b1974` over the FOPEX body/suffix.  The matcher
+(`FUN_1801f9ec0` -> `FUN_1801fa18c`) adds the signed offset to the current scan
+position and checks the literal prefix byte-wise.  The same matcher is called
+from the KVIR32 page scan (`FUN_180118728`), the MSIL/VB scanners and the
+generic record lookup (`FUN_180b66e50`).  Nothing here is a file-byte pattern in
+the scanned file in the same sense as HSTR/KPAT: it is a code/emulation
+fingerprint.
+
+Coverage:
+
+| type | records | real | named | notes |
+|------|--------:|-----:|------:|-------|
+| `ASEP_FILEPATH` `0x71` | 1,191 | 1,191 | 0 | FILEPATH payload, ASEP context |
+| `FOP` `0x7f` | 1,519 | 790 | 729 (474 labels) | literal fragments, 1,476 flag 0 / 43 flag 1 |
+| `FOPEX` `0x89` | 2,806 | 1,189 | 1,617 (1,096 labels) | 2,801 without suffix, 5 with 1-byte suffix |
+
+`FOP` labels are packer/obfuscator names (`!ASprotect`, `!eXPressor`,
+`!UPX_LZMA2_3.00`, `!#FOP:Win32/Nuwar.unsafe`); `FOPEX` labels are code-patch
+attributes and deep-analysis handlers
+(`!#attrmatch_codepatch_EIP_00000007_eb`,
+`!#FOPEX:VirTool:Win32/Obfuscator.ACV!EP`, `!#LoD:...`).  Examples:
+
+* `FOP !ASprotect` -> `bb 03 2b 83 89 0f 8d 50 ff ...` (42-byte literal fragment)
+* `FOPEX !#Tracur_LoDCheck` -> prefix `b9 48 e2`, body `fd 90 00`, offset `7`
+* `FOPEX` Cutwail -> `55 8b 64 8b 25 2d 66 75 a3 8d 51 50` +
+  `90 02 06 "HeapAlloc" 00 90 03 02 04 ff 15 "SetT" 90 00`, offset `42`
+
+Both FOP forms are expressible as YARA hex (`??` for literal wildcards, `[n]`
+skips for FOPEX tokens), but no generator is wired up.  Decoders: `AsepFilePathSig` /
+`AsepFolderNameSig` in `defender2yara/defender/signature/pathname.py` and
+`FopSig` / `FopExSig` in `defender2yara/defender/signature/fop.py`; wired into
+`Vdm.decode_record`; tests in `tests/test_signature_fop_asep.py`.
 
 ## Aggregate pseudo-threat records
 

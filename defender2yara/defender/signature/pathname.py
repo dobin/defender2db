@@ -1,11 +1,20 @@
-"""Path-name signatures: FILEPATH (``0x5f``) and FOLDERNAME (``0x60``).
+"""Path-name signatures: FILEPATH (``0x5f``), FOLDERNAME (``0x60``) and ASEP.
 
-Both record types are literal *path patterns*, not hashes and not byte
+All four record types are literal *path patterns*, not hashes and not byte
 patterns.  A record stores a 16-bit **root id** followed by the path relative to
 that root::
 
     u16  root_id      known-folder / special-folder id (CSIDL-style)
     u8   pattern[]    relative path or glob pattern, no NUL terminator
+
+``FILEPATH`` and ``ASEP_FILEPATH`` (``0x71``) share the same payload and the
+same parser (``FUN_1802b378c``); only the record type id differs.  The engine
+registers both in the resmgr plugin (``FUN_180939aa0``), building the record id
+as ``crc32(payload) | type << 32 | size << 40``.  ``ASEP_FILEPATH`` is used in
+the auto-start extensibility point (ASEP) checks, where the same path is
+evaluated in the context of a registered startup location.  ``FOLDERNAME`` and
+``ASEP_FOLDERNAME`` (``0x75``) are the directory counterparts; the ASEP variants
+use the same payload in the ASEP context.
 
 The root id is a Windows `CSIDL` value in the range `0x00`..`0x3d`.  The
 shipped records confirm the mapping: `0x25` (`CSIDL_SYSTEM`) is used for
@@ -60,6 +69,14 @@ from defender2yara.defender.constant import SIG_TYPES
 
 FILEPATH_SIG = "SIGNATURE_TYPE_FILEPATH"
 FOLDERNAME_SIG = "SIGNATURE_TYPE_FOLDERNAME"
+ASEP_FILEPATH_SIG = "SIGNATURE_TYPE_ASEP_FILEPATH"
+ASEP_FOLDERNAME_SIG = "SIGNATURE_TYPE_ASEP_FOLDERNAME"
+PATHNAME_SIGS = (
+    FILEPATH_SIG,
+    FOLDERNAME_SIG,
+    ASEP_FILEPATH_SIG,
+    ASEP_FOLDERNAME_SIG,
+)
 
 # id -> (CSIDL/engine name, rendering macro)
 #
@@ -147,10 +164,12 @@ def decode_path_text(raw: bytes) -> str:
 
 
 class PathNameSig(BaseSig):
-    """Shared decoder for ``FILEPATH`` and ``FOLDERNAME``."""
+    """Shared decoder for ``FILEPATH``, ``FOLDERNAME`` and their ASEP forms."""
 
     SIG_TYPE_ID: int = 0
     layout = "pathname"
+    SHORT_NAME = "PATH"
+    ASEP = False
 
     def __init__(self, data: bytes, ptr: int = 0) -> None:
         self.parse_common_header(data, ptr)
@@ -205,6 +224,7 @@ class PathNameSig(BaseSig):
             "root_name": self.root_name,
             "root_macro": self.root_macro,
             "is_absolute": self.is_absolute,
+            "is_asep": self.ASEP,
             "pattern": self.pattern,
             "is_wildcard": self.is_wildcard,
             "rendered": self.rendering,
@@ -213,8 +233,7 @@ class PathNameSig(BaseSig):
         }
 
     def describe(self) -> str:
-        kind = "FILEPATH" if self.SIG_TYPE_ID == 0x5F else "FOLDERNAME"
-        return f"{kind} {self.rendering}"
+        return f"{self.SHORT_NAME} {self.rendering}"
 
     def __repr__(self) -> str:
         return (
@@ -228,6 +247,7 @@ class FilePathSig(PathNameSig):
 
     SIG_TYPE_ID = 0x5F
     layout = "filepath"
+    SHORT_NAME = "FILEPATH"
 
 
 class FolderNameSig(PathNameSig):
@@ -235,3 +255,30 @@ class FolderNameSig(PathNameSig):
 
     SIG_TYPE_ID = 0x60
     layout = "foldername"
+    SHORT_NAME = "FOLDERNAME"
+
+
+class AsepFilePathSig(PathNameSig):
+    """``SIGNATURE_TYPE_ASEP_FILEPATH`` (``0x71``).
+
+    Same payload as :class:`FilePathSig`, evaluated at an auto-start
+    extensibility point (Run key, startup folder, service, ...).
+    """
+
+    SIG_TYPE_ID = 0x71
+    layout = "asep_filepath"
+    SHORT_NAME = "ASEP_FILEPATH"
+    ASEP = True
+
+
+class AsepFolderNameSig(PathNameSig):
+    """``SIGNATURE_TYPE_ASEP_FOLDERNAME`` (``0x75``).
+
+    Same payload as :class:`FolderNameSig`, evaluated at an auto-start
+    extensibility point.
+    """
+
+    SIG_TYPE_ID = 0x75
+    layout = "asep_foldername"
+    SHORT_NAME = "ASEP_FOLDERNAME"
+    ASEP = True

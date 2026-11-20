@@ -195,6 +195,10 @@ class Vdm:
             entry = FilePathSig(data,ptr)
         elif sig_type == "SIGNATURE_TYPE_FOLDERNAME":
             entry = FolderNameSig(data,ptr)
+        elif sig_type == "SIGNATURE_TYPE_ASEP_FILEPATH":
+            entry = AsepFilePathSig(data,ptr)
+        elif sig_type == "SIGNATURE_TYPE_ASEP_FOLDERNAME":
+            entry = AsepFolderNameSig(data,ptr)
         elif sig_type == "SIGNATURE_TYPE_VERSIONCHECK":
             entry = VersionCheckSig(data,ptr)
         elif sig_type in VDLL_SIGS:
@@ -213,6 +217,10 @@ class Vdm:
             entry = BootSig(data,ptr)
         elif sig_type == "SIGNATURE_TYPE_BRUTE":
             entry = BruteSig(data,ptr)
+        elif sig_type == "SIGNATURE_TYPE_FOP":
+            entry = FopSig(data,ptr)
+        elif sig_type == "SIGNATURE_TYPE_FOPEX":
+            entry = FopExSig(data,ptr)
         else:
             entry = BaseSig(data,ptr)
         return entry

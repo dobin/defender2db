@@ -267,9 +267,12 @@ to Latin-1, matching the other text decoders in the project.
 ### Related types
 
 `SIGNATURE_TYPE_FILENAME` (`0x5e`), `SIGNATURE_TYPE_ASEP_FILEPATH` (`0x71`)
-and `SIGNATURE_TYPE_ASEP_FOLDERNAME` (`0x75`) are in the same family.  They
-are not decoded here; the `0x5e` payload is a bare filename, while
-`0x71`/`0x75` add the ASEP (auto-start extension point) context.
+and `SIGNATURE_TYPE_ASEP_FOLDERNAME` (`0x75`) are in the same family.  The
+`0x5e` payload is a bare filename.  `0x71`/`0x75` use exactly the same
+`root_id + path` payload as FILEPATH/FOLDERNAME and are now decoded by
+`AsepFilePathSig` / `AsepFolderNameSig` (see
+`doc/sigs/sig_decode_fop_asep.md`); the ASEP variants only add the auto-start
+extensibility point context.
 
 ---
 

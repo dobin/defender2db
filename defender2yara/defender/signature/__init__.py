@@ -31,7 +31,7 @@ from defender2yara.defender.signature.aggregator import (
     AaAggregatorExSig, AaAggregatorSig,
 )
 from defender2yara.defender.signature.pathname import (
-    FilePathSig, FolderNameSig,
+    AsepFilePathSig, AsepFolderNameSig, FilePathSig, FolderNameSig,
 )
 from defender2yara.defender.signature.versioncheck import VersionCheckSig
 from defender2yara.defender.signature.kpat import (
@@ -43,3 +43,4 @@ from defender2yara.defender.signature.regkey import RegKeySig
 from defender2yara.defender.signature.ndat import NdatSig
 from defender2yara.defender.signature.boot import BootSig
 from defender2yara.defender.signature.brute import BruteSig
+from defender2yara.defender.signature.fop import FopSig, FopExSig
