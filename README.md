@@ -214,6 +214,23 @@ Get the ASR rules into `rules/`:
 uv run defender2db --asr
 ```
 
+### VDLL payloads
+
+`SIGNATURE_TYPE_VDLL_X86`/`VDLL_X64` records embed complete, tiny PE DLL images:
+Defender's "virtual DLLs" that the emulator loads to resolve calls into emulated
+modules such as `MSHTML.DLL` or `WAB32.DLL`. Dump them, grouped by architecture
+and named after the emulated module, into `cache/dlls/`:
+
+```sh
+uv run defender2db --dump-dlls
+```
+
+`cache/dlls/x86/` and `cache/dlls/x64/` receive one file per record (payloads are
+written verbatim; a duplicate module name is disambiguated with the record
+offset). Existing files with the same name are overwritten, and the SQLite
+database is not modified. Payloads that do not parse as a PE are still dumped and
+logged as a warning.
+
 
 ## Usage
 

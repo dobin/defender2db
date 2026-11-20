@@ -1,10 +1,13 @@
 """Vectors from the shipped database for VDLL_X86 (0x79) and VDLL_X64 (0x7c)."""
 
 import json
+import os
+import tempfile
 import unittest
 
 from defender2yara.defender.signature import VdllSig
 from defender2yara.defender.vdm import Vdm
+from defender2yara.main import dump_vdlls
 
 
 def tlv(kind, payload):
@@ -155,6 +158,63 @@ class VdllSigTests(unittest.TestCase):
     def test_dispatch(self):
         self.assertIsInstance(Vdm.decode_record(tlv(0x79, VDLL_X86_UNKNOWNSYS)), VdllSig)
         self.assertIsInstance(Vdm.decode_record(tlv(0x7C, VDLL_X64_MSHTML)), VdllSig)
+
+
+class DumpVdllTests(unittest.TestCase):
+    class FakeVdm:
+        def __init__(self, signatures):
+            self.signatures = signatures
+
+        def get_signatures(self):
+            return self.signatures
+
+    def dump(self, records):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        counts = dump_vdlls(self.FakeVdm(records), self.tmp.name)
+        return self.tmp.name, counts
+
+    def test_dumps_by_architecture(self):
+        out, counts = self.dump([
+            VdllSig(tlv(0x79, VDLL_X86_UNKNOWNSYS)),
+            VdllSig(tlv(0x7C, VDLL_X64_MSHTML)),
+        ])
+        self.assertEqual(counts, {"x86": 1, "x64": 1})
+
+        x86_path = os.path.join(out, "x86", "UNKNOWNSYS.DLL")
+        x64_path = os.path.join(out, "x64", "MSHTML.DLL")
+        with open(x86_path, "rb") as f:
+            self.assertEqual(f.read(), VDLL_X86_UNKNOWNSYS)
+        with open(x64_path, "rb") as f:
+            self.assertEqual(f.read(), VDLL_X64_MSHTML)
+        self.assertTrue(x86_path.endswith(".DLL"))
+
+    def test_duplicate_module_names_are_disambiguated(self):
+        first = tlv(0x79, VDLL_X86_UNKNOWNSYS)
+        data = first + tlv(0x79, VDLL_X86_UNKNOWNSYS)
+        out, counts = self.dump([
+            VdllSig(data, 0),
+            VdllSig(data, len(first)),
+        ])
+        self.assertEqual(counts, {"x86": 2})
+        names = sorted(os.listdir(os.path.join(out, "x86")))
+        self.assertEqual(names, [
+            "UNKNOWNSYS.DLL",
+            f"UNKNOWNSYS_{len(first):08x}.DLL",
+        ])
+
+    def test_non_pe_payload_is_dumped(self):
+        out, counts = self.dump([VdllSig(tlv(0x7C, b"not a PE image"))])
+        self.assertEqual(counts, {"x64": 1})
+        self.assertEqual(
+            os.listdir(os.path.join(out, "x64")),
+            ["unknown_7c_00000000.dll"],
+        )
+
+    def test_ignores_other_signature_types(self):
+        out, counts = self.dump([object()])
+        self.assertEqual(counts, {})
+        self.assertFalse(os.path.exists(os.path.join(out, "x86")))
 
 
 if __name__ == "__main__":

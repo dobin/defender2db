@@ -1,5 +1,6 @@
 from typing import List,Dict,Tuple
 import os
+import re
 import sys
 import shutil
 from collections import Counter, defaultdict
@@ -179,6 +180,71 @@ def parse_sig_lua(vdm:Vdm, name: str):
                     pass
 
             n += 1
+
+
+_INVALID_FILENAME_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
+_WINDOWS_RESERVED_NAMES = frozenset(
+    ["CON", "PRN", "AUX", "NUL"]
+    + [f"COM{i}" for i in range(1, 10)]
+    + [f"LPT{i}" for i in range(1, 10)]
+)
+
+
+def _dll_filename(sig: VdllSig, used: set[str]) -> str:
+    """Pick a safe, unique filename for a VDLL payload (emulated module DLL)."""
+    name = _INVALID_FILENAME_CHARS.sub("_", sig.module_name or "").strip(" .")
+    if not name:
+        name = f"unknown_{sig.sig_type_id:02x}_{sig.offset:08x}"
+
+    stem, extension = os.path.splitext(name)
+    if not extension:
+        extension = ".dll"
+    if stem.upper() in _WINDOWS_RESERVED_NAMES:
+        stem = "_" + stem
+
+    candidate = stem + extension
+    if candidate.lower() in used:
+        # Same module emulated by more than one image: disambiguate by record offset.
+        candidate = f"{stem}_{sig.offset:08x}{extension}"
+    suffix = 2
+    while candidate.lower() in used:
+        candidate = f"{stem}_{sig.offset:08x}_{suffix}{extension}"
+        suffix += 1
+
+    used.add(candidate.lower())
+    return candidate
+
+
+def dump_vdlls(vdm: Vdm, output_dir: str) -> Dict[str, int]:
+    """Write every VDLL_X86/VDLL_X64 payload as a file under output_dir/<arch>/.
+
+    A VDLL record body is a complete file-layout PE image, so the payload can be
+    written verbatim. Files are named after the emulated module (the export
+    directory name) and grouped by architecture.
+    """
+    counts: Dict[str, int] = Counter()
+    used_names: Dict[str, set[str]] = defaultdict(set)
+
+    for sig in vdm.get_signatures():
+        if not isinstance(sig, VdllSig):
+            continue
+
+        arch_dir = os.path.join(output_dir, sig.architecture)
+        os.makedirs(arch_dir, exist_ok=True)
+        path = os.path.join(arch_dir, _dll_filename(sig, used_names[arch_dir]))
+        with open(path, "wb") as f:
+            f.write(sig.sig_data)
+
+        counts[sig.architecture] += 1
+        if not sig.is_valid_pe:
+            logger.warning(f"VDLL payload is not a valid PE image, dumped as-is: {path}")
+            logger.warning(f"  {sig.decode_warnings[0] if sig.decode_warnings else 'unknown error'}")
+
+    if counts:
+        summary = ", ".join(f"{arch}: {count}" for arch, count in sorted(counts.items()))
+        logger.info(f"Dumped VDLL images ({summary}) to {output_dir}")
+
+    return dict(counts)
 
 
 def parse_threat_lua(vdm:Vdm):
@@ -588,6 +654,9 @@ def main(args):
                 elif args.asr:
                     # extract ASR entries
                     parse_asr(vdm)
+                elif args.dump_dlls:
+                    # write VDLL_X86/VDLL_X64 payloads (embedded PE DLLs) to files
+                    dump_vdlls(vdm, os.path.join(cache_dir, "dlls"))
                 else:
                     # extract ASR entries - around 24
                     #parse_asr(vdm)

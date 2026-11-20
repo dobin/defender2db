@@ -24,6 +24,7 @@ def run():
     parser.add_argument('-d','--download',action='store_true' ,required=False,default=False,help="download the latest signature database")
     parser.add_argument('-c', '--convert', action='store_true', required=False, default=False, help="convert downloaded signatures to DB format")
     parser.add_argument('-a', '--asr', action='store_true', required=False, default=False, help="Extract ASR rules from VDM")
+    parser.add_argument('--dump-dlls', action='store_true', required=False, default=False, help="dump VDLL_X86/VDLL_X64 payloads (embedded PE DLLs) to cache/dlls")
     parser.add_argument('--include-raw', action='store_true', help='retain exact records for research (default: decoded data only)')
     parser.add_argument('--db', default='cache/threats.db', help='output SQLite database path')
 
