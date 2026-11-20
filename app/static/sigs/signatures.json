@@ -117,5 +117,13 @@
   "VDLL_X64": {
     "description": "A 64-bit virtual DLL: a complete PE image used by Defender's emulator to intercept calls to an emulated Windows module. The export name identifies the module.",
     "detail": "SIG_VDLL.md"
+  },
+  "KVIR32": {
+    "description": "A legacy two-window CRC page fingerprint: a 16-byte anchor at page offset 0, 16 or 32 plus a body window CRC. Mostly used for packer and entry-point code fingerprints, not as a byte pattern.",
+    "detail": "SIG_KVIR32.md"
+  },
+  "REGKEY": {
+    "description": "A registry condition: a hive, a key path, an optional value name and optional expected value data. It is evaluated against the live registry, not against file bytes.",
+    "detail": "SIG_REGKEY.md"
   }
 }

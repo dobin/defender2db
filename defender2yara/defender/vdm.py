@@ -203,6 +203,10 @@ class Vdm:
             entry = KpatSig(data,ptr)
         elif sig_type == "SIGNATURE_TYPE_KPATEX":
             entry = KpatExSig(data,ptr)
+        elif sig_type == "SIGNATURE_TYPE_KVIR32":
+            entry = Kvir32Sig(data,ptr)
+        elif sig_type == "SIGNATURE_TYPE_REGKEY":
+            entry = RegKeySig(data,ptr)
         else:
             entry = BaseSig(data,ptr)
         return entry

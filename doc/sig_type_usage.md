@@ -33,9 +33,9 @@ Counts are actual signature records, unpacked from every `threatObject` blob (no
 | 19 | `SIGNATURE_TYPE_FOLDERNAME` | `0x60` | 6,055 | 0.09% | 2,020 | parsed (CSIDL root + path/glob) |
 | 20 | `SIGNATURE_TYPE_MACRO_PCODE64` | `0xCF` | 5,925 | 0.09% | 1,128 | parsed (3 p-code routine keys) |
 | 21 | `SIGNATURE_TYPE_MACROHSTR_EXT` | `0x8F` | 5,693 | 0.08% | 4,047 | parsed (YARA) |
-| 22 | `SIGNATURE_TYPE_KVIR32` | `0x20` | 5,369 | 0.08% | 2,704 | raw only / unimplemented |
+| 22 | `SIGNATURE_TYPE_KVIR32` | `0x20` | 5,369 | 0.08% | 2,704 | parsed (page anchor + body CRCs, packer/emulator labels) |
 | 23 | `SIGNATURE_TYPE_BM_INFO` | `0xA8` | 4,192 | 0.06% | 1,716 | parsed (id spec + telemetry tags) |
-| 24 | `SIGNATURE_TYPE_REGKEY` | `0x63` | 3,911 | 0.06% | 542 | raw only / unimplemented |
+| 24 | `SIGNATURE_TYPE_REGKEY` | `0x63` | 3,911 | 0.06% | 542 | parsed (hive + key/value condition) |
 | 25 | `SIGNATURE_TYPE_CMDHSTR_EXT` | `0xD7` | 2,941 | 0.04% | 2,737 | parsed (command-line strings + flags/wildcards) |
 | 26 | `SIGNATURE_TYPE_DEXHSTR_EXT` | `0xBE` | 2,766 | 0.04% | 2,653 | parsed (DEX strings + flags/wildcards) |
 | 27 | `SIGNATURE_TYPE_FILEPATH` | `0x5F` | 2,479 | 0.04% | 515 | parsed (CSIDL root + path/glob) |
@@ -815,6 +815,93 @@ large undecoded region of `!InfrastructureShared`.
 
 VDLL_META (`0xb5` / `0xe1`) records remain opaque; they are not needed to
 parse an image, because the PE itself carries the module name and API surface.
+
+## Thirteenth round: KVIR32 page fingerprints and REGKEY registry conditions
+
+Full write-up: `doc/sigs/sig_decode_kvir32_regkey.md`.  Engine notes were
+added to `cache/functions_vdm.md` §21.
+
+These were the last two large undecoded types.  Neither contains an inline
+byte pattern, so neither feeds YARA generation.
+
+### `SIGNATURE_TYPE_KVIR32` (`0x20`)
+
+A **two-window CRC page fingerprint**, not a byte pattern.  Layout::
+
+    u32 anchor_crc      CRC-32 of 16 bytes at page offset 16 * anchor_window
+    u32 body_crc        CRC-32 of body_length bytes at body_offset
+    u16 body_offset     offset inside the scanned page
+    u16 body_length     body window length
+    u16 anchor_window   0, 1 or 2 -> anchor at page offset 0, 16 or 32
+    i16 flags           0 = report; negative (0x8000) = match only
+    u8  name_length     optional
+    u8  name[name_length]
+
+The page scanner (`FUN_180118728`) computes the CRC of the 16-byte windows at
+`page + 16*i`, looks up `anchor_crc` (`FUN_18011804c`), requires the stored
+window index to match, and finally verifies the body window with
+`FUN_1804a4c5c` (CRC-32 of `[body_offset, body_offset + body_length)`,
+possibly spanning pages).  A negative `flags` value suppresses the report;
+those records only feed the emulator/repair logic.  The optional name is not
+part of the record id (`crc32(16 bytes) | 0x20 << 32 | 0x10 << 40`).
+
+Despite the name, the type is mostly used for **packer and entry-point
+fingerprints**.  All 1,226 shared records are named (680 labels) -
+`!UPX_1_X`, `!ASProtect`, `!Themida`, `!FSG_1_3`, `!PECompact`, `!Armadillo`,
+`!MPRESS64`, ... - and many real-threat records are emulator conditions such
+as `!#attrmatch_codepatch_EIP_00000009_909090909090`.  Real owners include
+`Trojan:Win32/Dorv.A` (548), `Trojan:Win32/Tracur`, `VirTool:Win32/CeeInject*`
+and the Sality/Godog/Xpaj file infectors.
+
+Coverage: 6,595 records (5,369 real, 2,704 threats).  `anchor_window` 0/1/2 =
+6,377/195/23; `flags` 0/0x8000 = 6,497/98; 6,239 records have
+`body_offset == 16 * anchor_window`.  Body lengths are dominated by 64 (3,101),
+36 (1,006) and 1024 (449); offsets stay <= 768 and offset+length <= 16,384.
+All 6,595 records decode with zero errors and zero warnings.
+
+### `SIGNATURE_TYPE_REGKEY` (`0x63`)
+
+A **registry condition** evaluated against the live registry, not a file
+signature::
+
+    u16 hive            1 HKCR, 2 HKCU, 3 HKLM, 4 HKU (accepted, unused)
+    u16 key_length
+    u8  key[key_length]
+    u16 value_length
+    u8  value[value_length]
+
+The key is stored relative to the hive.  A literal `\\` in the key separates
+the key path from the **value name**; an empty value string means "the key
+exists", a non-empty one is the expected value data.  `FUN_1802b27c0`
+(resmgr, registered by `FUN_1809382c0` next to FILEPATH/FOLDERNAME) validates
+the hive and lengths, splits the key at the first `\\`, strips one of eleven
+well-known path prefixes (`FUN_1802b34f4`, table `0x180d82b50`), interns the
+data and registers the condition.  Matching is case-insensitive and treats `/`
+as `\` (`FUN_1803c3420` / `FUN_18093a800`); entries with a value name live in
+one table and "key + value data, any value name" entries in another.
+
+The hive ids are inferred from the stored keys: HKCR holds only extension keys
+and ProgIDs, HKCU the per-user `Software\VB and VBA Program Settings` family,
+HKLM the `SYSTEM\CurrentControlSet` / Winlogon / Internet Settings family.
+A hive id outside 1..4 makes the engine ignore the record; the database has one
+such `0xffff` record.
+
+Coverage: 3,911 records used by 542 threats; HKLM 2,526, HKCU 1,310, HKCR 74
+and one invalid.  476 records pin a value name (72 with an empty name, e.g.
+`.z\\`) and 269 carry expected value data.  All records parse; the invalid-hive
+record is flagged `partial`.  Top owners are adware/browser-modifier families
+(`Hotbar` 167, `BrowserModifier:Win32/Zwangi` 162, `...Cometsystems` 104,
+`Rogue:Win32/SpyAxe` 86).
+
+Examples: `HKCU\Software\kuum` (existence),
+`HKLM\SYSTEM\CurrentControlSet\Services\Wmi\Parameters\\ServiceDll =
+"%SystemRoot%\System32\WdmWmi.dll"`,
+`HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings\\ProxyServer
+= "77.78.240.167:80"` and `HKCR\.z\\ = "WinZipper.z"`.
+
+Decoders: `Kvir32Sig` in `defender2yara/defender/signature/kvir32.py` and
+`RegKeySig` in `defender2yara/defender/signature/regkey.py`.  Wired into
+`Vdm.decode_record`; tests in `tests/test_signature_kvir_regkey.py`.
 
 ## Aggregate pseudo-threat records
 
