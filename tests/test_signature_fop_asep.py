@@ -99,7 +99,7 @@ class FopExTests(SignatureSnapshotMixin, unittest.TestCase):
         self.assertEqual(sig.prefix_length, 12)
         self.assertEqual(sig.body_length, 25)
         self.assertEqual(sig.suffix_length, 0)
-        self.assertEqual(sig.offset, 42)
+        self.assertEqual(sig.file_offset, 42)
         self.assertEqual(sig.prefix.hex(), "558b648b252d6675a38d5150")
         self.assertEqual(sig.body[:4].hex(), "90020648")
         self.assertTrue(sig.body.endswith(b"\x90\x00"))
@@ -111,7 +111,7 @@ class FopExTests(SignatureSnapshotMixin, unittest.TestCase):
         self.assertEqual(sig.decode_status, "decoded")
         d = self.snapshot(sig)
         self.assertEqual(d["layout"], "fopex")
-        self.assertEqual(d["offset"], 42)
+        self.assertEqual(d["file_offset"], 42)
         self.assertEqual(d["prefix_length"], 12)
         self.assertEqual(d["body_length"], 25)
 
@@ -122,7 +122,7 @@ class FopExTests(SignatureSnapshotMixin, unittest.TestCase):
         self.assertEqual(sig.prefix, bytes.fromhex("b948e2"))
         self.assertEqual(sig.body, bytes.fromhex("fd9000"))
         self.assertEqual(sig.suffix, b"")
-        self.assertEqual(sig.offset, 7)
+        self.assertEqual(sig.file_offset, 7)
         self.assertEqual(sig.pattern_hex, "b9 48 e2 fd")
         self.assertTrue(sig.pattern_text.startswith("\\xb9H\\xe2"))
         self.assertEqual(sig.decode_warnings, [])
@@ -133,9 +133,18 @@ class FopExTests(SignatureSnapshotMixin, unittest.TestCase):
         self.assertEqual(sig.body_length, 0x42)
         self.assertEqual(sig.suffix_length, 1)
         self.assertEqual(sig.suffix, b"\x89")
-        self.assertEqual(sig.offset, 0)
+        self.assertEqual(sig.file_offset, 0)
         self.assertEqual(sig.decode_warnings, [])
         self.assertEqual(len(sig.pattern), 72)
+
+    def test_record_offset_not_overwritten(self):
+        # The payload's signed match offset must not clobber the VDM record
+        # offset, which is the signature table's unique key.
+        data = b"\x00" * 16 + self.CUTWAIL
+        sig = FopExSig(data, 16)
+        self.assertEqual(sig.offset, 16)
+        self.assertEqual(sig.file_offset, 42)
+        self.assertEqual(sig.offset + sig.record_size, 16 + len(self.CUTWAIL))
 
     def test_router(self):
         sig = Vdm.decode_record(self.CUTWAIL, 0)
@@ -178,11 +187,11 @@ class FopEx64Tests(SignatureSnapshotMixin, unittest.TestCase):
         self.assertEqual(sig.prefix_length, 30)
         self.assertEqual(sig.body_length, 13)
         self.assertEqual(sig.suffix_length, 0)
-        self.assertEqual(sig.offset, 70)
+        self.assertEqual(sig.file_offset, 70)
         self.assertTrue(sig.body.endswith(b"\x90\x00"))
         self.assertEqual(sig.decode_warnings, [])
         self.assertEqual(sig.decode_status, "decoded")
-        self.assertEqual(self.snapshot(sig)["offset"], 70)
+        self.assertEqual(self.snapshot(sig)["file_offset"], 70)
 
     def test_router(self):
         sig = Vdm.decode_record(self.EXPIRO, 0)

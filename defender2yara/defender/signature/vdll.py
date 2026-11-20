@@ -148,10 +148,13 @@ class VdllSig(BaseSig):
             self.decode_warnings.append(f"Could not parse the embedded PE: {error}")
             return
 
-        try:
-            self._read_pe(pe)
-        finally:
-            pe.close()
+        # Deliberately not calling ``pe.close()``: the data was passed in
+        # memory, so there is nothing to release, and ``PE._close_data()``
+        # unconditionally runs ``gc.collect()``.  With millions of signature
+        # objects alive that costs seconds per VDLL record (thousands of
+        # records per database), which dominated parse time.
+        self._read_pe(pe)
+        del pe
 
     def _read_pe(self, pe) -> None:
         file_header = pe.FILE_HEADER

@@ -259,9 +259,11 @@ class FopExSig(_FopBase):
                 f"Truncated {self.sig_type} payload: {len(payload)} bytes"
             )
 
+        # ``file_offset``, not ``offset``: the latter is the record's position
+        # in the VDM stream and is used as the signature table's unique key.
         (self.flags, self.name_length, self.prefix_length,
          self.body_length, self.suffix_length,
-         self.offset) = struct.unpack_from("<BBHHHh", payload, 0)
+         self.file_offset) = struct.unpack_from("<BBHHHh", payload, 0)
         expected = (
             10 + self.name_length + self.prefix_length
             + self.body_length + self.suffix_length
@@ -329,7 +331,7 @@ class FopExSig(_FopBase):
             "body_hex": self.body_hex,
             "suffix_length": self.suffix_length,
             "suffix_hex": self.suffix_hex,
-            "offset": self.offset,
+            "file_offset": self.file_offset,
             "pattern_length": len(self.pattern),
             "pattern_hex": self.pattern_hex,
             "pattern_text": self.pattern_text,
